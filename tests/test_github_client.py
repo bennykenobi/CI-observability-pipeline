@@ -20,7 +20,7 @@ async def test_github_client_reuses_installation_token_for_multiple_calls():
         if request.url.path == "/app/installations/99/access_tokens":
             return httpx.Response(200, json={"token": "abc"})
         if request.url.path == "/repos/org/repo/actions/runs/11":
-            assert request.headers["Authorization"] == "Bearer abc"
+            assert request.headers["Authorization"] == "token abc"
             return httpx.Response(200, json={"id": 11})
         if request.url.path == "/repos/org/repo/actions/runs/11/jobs":
             return httpx.Response(200, json={"jobs": []})

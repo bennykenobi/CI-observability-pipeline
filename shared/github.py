@@ -72,7 +72,7 @@ class GitHubClient:
             token = await self.auth.installation_token(self.http_client, installation_id)
             self._token_cache[installation_id] = token
         return {
-            "Authorization": f"Bearer {token}",
+            "Authorization": f"token {token}",
             "Accept": "application/vnd.github+json",
         }
 
