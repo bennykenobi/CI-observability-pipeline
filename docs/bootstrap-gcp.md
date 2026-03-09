@@ -14,7 +14,7 @@ It is intentionally documentation only:
 - billing enabled on the target GCP project
 - Docker installed locally
 - a GitHub repository already created for this project
-- a GitHub App plan for multi-repo access
+- a plan to create a GitHub App for multi-repo access
 
 ## 1. Set project context
 
@@ -67,6 +67,7 @@ Do not create the worker push subscription yet. Wait until the worker Cloud Run 
 ```bash
 gcloud sql instances create ci-observability-pg \
   --database-version=POSTGRES_16 \
+  --edition=ENTERPRISE \
   --tier=db-f1-micro \
   --region=YOUR_REGION
 ```
@@ -83,7 +84,7 @@ Create the DB user:
 ```bash
 gcloud sql users create ci_observability_app \
   --instance=ci-observability-pg \
-  --prompt-for-password
+  --password="DB_PASSWORD"
 ```
 
 ## 6. Store secrets in Secret Manager
@@ -93,7 +94,6 @@ Create secret containers:
 ```bash
 gcloud secrets create ci-obs-webhook-secret --replication-policy=automatic
 gcloud secrets create ci-obs-database-url --replication-policy=automatic
-gcloud secrets create ci-obs-github-app-private-key --replication-policy=automatic
 ```
 
 Add values interactively or from local files. Do not place secret values in repo files.
@@ -105,10 +105,6 @@ printf "YOUR_WEBHOOK_SECRET" | gcloud secrets versions add ci-obs-webhook-secret
 ```
 
 For the GitHub App private key, use a local file outside the repo:
-
-```bash
-gcloud secrets versions add ci-obs-github-app-private-key --data-file=/secure/path/github-app-private-key.pem
-```
 
 For the database URL, use the Cloud SQL connection name and store the final runtime DSN in Secret Manager:
 
@@ -156,7 +152,19 @@ Before deployment, ensure:
 - both services use service accounts with least privilege
 - secret access is granted only to the relevant service account
 
-## 10. Create the Pub/Sub push subscription
+## 10. GitHub App setup
+
+Follow:
+
+- `docs/github-app-setup.md`
+
+After the app exists:
+
+- create `ci-obs-github-app-private-key`
+- add the private key value in Secret Manager
+- record the GitHub App ID for worker deployment
+
+## 11. Create the Pub/Sub push subscription
 
 After the worker URL exists:
 
@@ -169,18 +177,6 @@ gcloud pubsub subscriptions create ci-observability-worker-push \
 ```
 
 Also configure authenticated push and Cloud Run invoker permissions so only Pub/Sub can call the worker.
-
-## 11. GitHub App setup
-
-Create a GitHub App with permissions at minimum for:
-
-- Actions: read
-- Metadata: read
-- Contents: read
-
-Install it on the repositories you want to monitor.
-
-Store the private key in Secret Manager and the App ID as a Cloud Run env var.
 
 ## 12. Webhook setup
 

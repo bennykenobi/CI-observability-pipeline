@@ -126,6 +126,7 @@ Starter Cloud Run deployment scripts and notes are in `deploy/cloud-run/`.
 Additional runbooks:
 
 - `docs/bootstrap-gcp.md`
+- `docs/github-app-setup.md`
 - `docs/local-smoke-test.md`
 
 ## Schema Versioning
