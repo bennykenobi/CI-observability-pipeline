@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from services.ingestion_worker.app import create_app
 from shared.config import Settings
+from shared.ingestion import IngestionPermanentError, IngestionRetryableError
 from shared.schemas import WebhookIngestionMessage
 
 
@@ -13,10 +14,16 @@ class RecordingIngestionService:
     def __init__(self):
         self.messages = []
         self.raise_error = False
+        self.raise_permanent = False
+        self.raise_retryable = False
 
     async def ingest(self, message: WebhookIngestionMessage):
-        if self.raise_error:
+        if self.raise_retryable:
             raise RuntimeError("boom")
+        if self.raise_permanent:
+            raise IngestionPermanentError("permanent")
+        if self.raise_error:
+            raise IngestionRetryableError("retryable")
         self.messages.append(message)
 
 
@@ -66,7 +73,7 @@ def test_worker_rejects_oversized_pubsub_message():
         },
     )
 
-    assert response.status_code == 500
+    assert response.status_code == 204
     assert ingestion_service.messages == []
 
 
@@ -96,6 +103,32 @@ def test_worker_returns_500_when_ingestion_fails():
     assert response.status_code == 500
 
 
+def test_worker_acknowledges_non_retryable_ingestion_failure():
+    ingestion_service = RecordingIngestionService()
+    ingestion_service.raise_permanent = True
+    client = TestClient(create_app(settings=Settings(), ingestion_service=ingestion_service))
+    message = WebhookIngestionMessage(
+        action="completed",
+        delivery_id="delivery-1",
+        repository_id=1,
+        repository_full_name="org/repo",
+        run_id=11,
+        run_attempt=1,
+        sent_at=datetime.now(UTC),
+    ).model_dump(mode="json")
+
+    response = client.post(
+        "/pubsub/ingest",
+        json={
+            "message": {
+                "data": base64.b64encode(json.dumps(message).encode("utf-8")).decode("utf-8")
+            }
+        },
+    )
+
+    assert response.status_code == 204
+
+
 def test_worker_acknowledges_stale_pubsub_message_without_ingesting():
     ingestion_service = RecordingIngestionService()
     client = TestClient(
@@ -121,6 +154,44 @@ def test_worker_acknowledges_stale_pubsub_message_without_ingesting():
                 "data": base64.b64encode(json.dumps(message).encode("utf-8")).decode("utf-8")
             }
         },
+    )
+
+    assert response.status_code == 204
+    assert ingestion_service.messages == []
+
+
+def test_worker_acknowledges_legacy_message_missing_sent_at():
+    ingestion_service = RecordingIngestionService()
+    client = TestClient(create_app(settings=Settings(), ingestion_service=ingestion_service))
+    message = {
+        "action": "completed",
+        "delivery_id": "delivery-legacy",
+        "repository_id": 1,
+        "repository_full_name": "org/repo",
+        "run_id": 11,
+        "run_attempt": 1,
+    }
+
+    response = client.post(
+        "/pubsub/ingest",
+        json={
+            "message": {
+                "data": base64.b64encode(json.dumps(message).encode("utf-8")).decode("utf-8")
+            }
+        },
+    )
+
+    assert response.status_code == 204
+    assert ingestion_service.messages == []
+
+
+def test_worker_acknowledges_invalid_pubsub_message():
+    ingestion_service = RecordingIngestionService()
+    client = TestClient(create_app(settings=Settings(), ingestion_service=ingestion_service))
+
+    response = client.post(
+        "/pubsub/ingest",
+        json={"message": {"data": "!!!not-base64!!!"}},
     )
 
     assert response.status_code == 204

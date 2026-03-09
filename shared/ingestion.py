@@ -5,8 +5,10 @@ import logging
 from datetime import datetime
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from shared.config import Settings
-from shared.github import GitHubApiUnavailableError, GitHubClient
+from shared.github import GitHubApiPermanentError, GitHubApiUnavailableError, GitHubClient
 from shared.otel import get_tracer, set_span_attributes, span_kind_internal
 from shared.schemas import (
     IngestionBundle,
@@ -20,6 +22,14 @@ from shared.schemas import (
 
 logger = logging.getLogger(__name__)
 tracer = get_tracer(__name__)
+
+
+class IngestionRetryableError(RuntimeError):
+    pass
+
+
+class IngestionPermanentError(RuntimeError):
+    pass
 
 
 def _parse_datetime(value: str | None) -> datetime | None:
@@ -169,11 +179,16 @@ class IngestionService:
             )
             await asyncio.sleep(self.settings.initial_fetch_delay_seconds)
             last_error: Exception | None = None
-            installation_id = message.installation_id
-            if installation_id is None:
-                installation_id = await self.github_client.installation_id_for_repo(
-                    message.repository_full_name
-                )
+            try:
+                installation_id = message.installation_id
+                if installation_id is None:
+                    installation_id = await self.github_client.installation_id_for_repo(
+                        message.repository_full_name
+                    )
+            except GitHubApiUnavailableError as exc:
+                raise IngestionRetryableError("installation_lookup_unavailable") from exc
+            except GitHubApiPermanentError as exc:
+                raise IngestionPermanentError("installation_lookup_failed") from exc
             span.set_attribute("github_installation_id", installation_id)
             for attempt in range(1, self.settings.github_fetch_retry_attempts + 1):
                 try:
@@ -212,7 +227,9 @@ class IngestionService:
                     )
                     if attempt < self.settings.github_fetch_retry_attempts:
                         await asyncio.sleep(self.settings.github_fetch_retry_interval_seconds)
+                except (GitHubApiPermanentError, SQLAlchemyError) as exc:
+                    raise IngestionPermanentError("ingestion_failed_permanently") from exc
                 except Exception as exc:
                     last_error = exc
                     break
-            raise RuntimeError("ingestion_failed_after_retries") from last_error
+            raise IngestionRetryableError("ingestion_failed_after_retries") from last_error

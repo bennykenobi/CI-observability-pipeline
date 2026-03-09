@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from shared.config import Settings
-from shared.github import GitHubApiUnavailableError, GitHubClient
+from shared.github import GitHubApiPermanentError, GitHubApiUnavailableError, GitHubClient
 
 
 def make_transport(handler):
@@ -123,4 +123,24 @@ async def test_github_client_raises_on_server_error():
     client.auth.installation_token = lambda http_client, installation_id: _resolved_token("abc")
 
     with pytest.raises(GitHubApiUnavailableError):
+        await client.get_workflow_run("org/repo", 11, 99)
+
+
+@pytest.mark.asyncio
+async def test_github_client_raises_permanent_error_on_client_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, text="not found")
+
+    settings = Settings(
+        github_api_url="https://api.github.test",
+        github_app_id="123",
+        github_app_private_key="dummy",
+    )
+    client = GitHubClient(
+        settings=settings,
+        http_client=httpx.AsyncClient(transport=make_transport(handler)),
+    )
+    client.auth.installation_token = lambda http_client, installation_id: _resolved_token("abc")
+
+    with pytest.raises(GitHubApiPermanentError):
         await client.get_workflow_run("org/repo", 11, 99)

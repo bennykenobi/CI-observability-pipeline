@@ -3,7 +3,12 @@ from datetime import UTC, datetime
 import pytest
 
 from shared.github import GitHubApiUnavailableError
-from shared.ingestion import IngestionService, build_ingestion_bundle
+from shared.ingestion import (
+    IngestionPermanentError,
+    IngestionRetryableError,
+    IngestionService,
+    build_ingestion_bundle,
+)
 from shared.schemas import WebhookIngestionMessage
 
 
@@ -182,5 +187,47 @@ async def test_ingestion_service_raises_after_retry_exhaustion(monkeypatch):
         sent_at=datetime.now(UTC),
     )
 
-    with pytest.raises(RuntimeError, match="ingestion_failed_after_retries"):
+    with pytest.raises(IngestionRetryableError, match="ingestion_failed_after_retries"):
+        await service.ingest(message)
+
+
+class PermanentFailureGitHubClient(RetryGitHubClient):
+    async def get_workflow_run(self, repository_full_name, run_id, installation_id):
+        from shared.github import GitHubApiPermanentError
+
+        raise GitHubApiPermanentError("not found")
+
+
+@pytest.mark.asyncio
+async def test_ingestion_service_raises_permanent_error_without_retry(monkeypatch):
+    async def no_sleep(_):
+        return None
+
+    monkeypatch.setattr("shared.ingestion.asyncio.sleep", no_sleep)
+    client = PermanentFailureGitHubClient()
+    repository = RecordingBundleRepository()
+    service = IngestionService(
+        settings=type(
+            "SettingsStub",
+            (),
+            {
+                "initial_fetch_delay_seconds": 0,
+                "github_fetch_retry_attempts": 5,
+                "github_fetch_retry_interval_seconds": 0,
+            },
+        )(),
+        github_client=client,
+        repository=repository,
+    )
+    message = WebhookIngestionMessage(
+        action="completed",
+        delivery_id="delivery-1",
+        repository_id=1,
+        repository_full_name="org/repo",
+        run_id=11,
+        run_attempt=1,
+        sent_at=datetime.now(UTC),
+    )
+
+    with pytest.raises(IngestionPermanentError, match="ingestion_failed_permanently"):
         await service.ingest(message)

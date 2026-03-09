@@ -38,6 +38,10 @@ class Settings(BaseSettings):
                 raise ValueError("CI_OBS_WEBHOOK_SECRET must be set outside development")
             if not self.webhook_auth_token:
                 raise ValueError("CI_OBS_WEBHOOK_AUTH_TOKEN must be set outside development")
+            if not self.github_app_id:
+                raise ValueError("CI_OBS_GITHUB_APP_ID must be set outside development")
+            if not self.github_app_private_key:
+                raise ValueError("CI_OBS_GITHUB_APP_PRIVATE_KEY must be set outside development")
             if not self.otel_exporter_otlp_endpoint:
                 raise ValueError(
                     "CI_OBS_OTEL_EXPORTER_OTLP_ENDPOINT must be set outside development"

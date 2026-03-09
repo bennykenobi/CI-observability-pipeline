@@ -52,3 +52,4 @@ def configure_logging(level: int = logging.INFO) -> None:
     handler.setFormatter(JsonFormatter())
     root_logger.addHandler(handler)
     root_logger.setLevel(level)
+    logging.getLogger("httpx").setLevel(logging.WARNING)

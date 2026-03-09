@@ -14,6 +14,10 @@ class GitHubApiUnavailableError(RuntimeError):
     pass
 
 
+class GitHubApiPermanentError(RuntimeError):
+    pass
+
+
 tracer = get_tracer(__name__)
 
 
@@ -73,9 +77,7 @@ class GitHubClient:
                     "Accept": "application/vnd.github+json",
                 },
             )
-        if response.status_code >= 500:
-            raise GitHubApiUnavailableError(response.text)
-        response.raise_for_status()
+        self._raise_for_status(response)
         installation_id = response.json()["id"]
         self._installation_cache[repository_full_name] = installation_id
         return installation_id
@@ -111,9 +113,7 @@ class GitHubClient:
                 f"{self.settings.github_api_url}/repos/{repository_full_name}/actions/runs/{run_id}",
                 headers=headers,
             )
-        if response.status_code >= 500:
-            raise GitHubApiUnavailableError(response.text)
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response.json()
 
     async def list_jobs(
@@ -142,11 +142,17 @@ class GitHubClient:
                     headers=headers,
                     params={"per_page": 100, "page": page},
                 )
-            if response.status_code >= 500:
-                raise GitHubApiUnavailableError(response.text)
-            response.raise_for_status()
+            self._raise_for_status(response)
             payload = response.json()
             pages.append(payload)
             if len(payload.get("jobs", [])) < 100:
                 return pages
             page += 1
+
+    @staticmethod
+    def _raise_for_status(response: httpx.Response) -> None:
+        if response.status_code >= 500:
+            raise GitHubApiUnavailableError(response.text)
+        if response.status_code >= 400:
+            raise GitHubApiPermanentError(response.text)
+        response.raise_for_status()
