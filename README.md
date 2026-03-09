@@ -18,6 +18,7 @@ This MVP intentionally persists both normalized execution telemetry and raw webh
 
 - `services/ingestion_worker/app.py`
   - Receives Pub/Sub push messages
+  - Acknowledges stale messages instead of endlessly retrying old backlog
   - Waits for GitHub API consistency and retries transient failures
   - Fetches workflow run and paginated jobs data from GitHub
   - Persists normalized workflow/job/step records
@@ -67,7 +68,8 @@ Security-sensitive notes:
 - Callback deliveries should be monitored for replay and delivery anomalies.
 - Public webhook ingress should be protected with an edge control such as Cloud Armor in addition to app-layer authentication.
 - Request body sizes are logged and enforced by configurable ingress limits.
-- The current replay cache is in-memory per service instance. Use a shared TTL-backed store before treating replay protection as multi-instance production-grade.
+- The webhook uses `CI_OBS_REPLAY_STORE_URL` when provided to enforce replay protection through a shared TTL-backed store such as Redis. Without it, replay protection falls back to in-memory state and is only reliable per service instance.
+- The worker uses `CI_OBS_MAX_INGESTION_MESSAGE_AGE_SECONDS` to discard stale Pub/Sub messages instead of retrying old backlog forever.
 
 ## Run
 

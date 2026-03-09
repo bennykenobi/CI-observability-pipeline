@@ -11,7 +11,6 @@ These commands assume:
 
 Both services need:
 
-- `CI_OBS_DATABASE_URL`
 - `CI_OBS_GITHUB_API_URL`
 - `CI_OBS_INITIAL_FETCH_DELAY_SECONDS`
 - `CI_OBS_GITHUB_FETCH_RETRY_ATTEMPTS`
@@ -22,13 +21,15 @@ Webhook service also needs:
 - `CI_OBS_WEBHOOK_SECRET`
 - `CI_OBS_WEBHOOK_AUTH_TOKEN`
 - `CI_OBS_PUBSUB_TOPIC`
+- optionally `CI_OBS_REPLAY_STORE_URL` and `CI_OBS_REPLAY_STORE_KEY_PREFIX` when using Redis-backed replay protection
 
 Worker service also needs:
 
+- `CI_OBS_DATABASE_URL`
 - `CI_OBS_GITHUB_APP_ID`
 - `CI_OBS_GITHUB_APP_PRIVATE_KEY`
 
-All runtime workloads that touch Postgres also need the Cloud SQL instance attached with:
+Only runtime workloads that touch Postgres need the Cloud SQL instance attached with:
 
 - `--add-cloudsql-instances PROJECT:REGION:INSTANCE`
 

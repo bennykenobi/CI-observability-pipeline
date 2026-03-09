@@ -144,6 +144,10 @@ Values needed at this point:
   - format:
   - `postgresql+psycopg://ci_observability_app:DB_PASSWORD@/ci_observability?host=/cloudsql/PROJECT:REGION:INSTANCE`
 
+Optional hardening:
+
+- If you want shared replay protection across multiple webhook instances, also provision a Redis-compatible TTL store such as Memorystore and plan to set `CI_OBS_REPLAY_STORE_URL` on the webhook service.
+
 Get the Cloud SQL connection name with:
 
 ```bash
@@ -207,7 +211,7 @@ Before deployment, ensure:
 - the worker service is private
 - both services use service accounts with least privilege
 - secret access is granted only to the relevant service account
-- the Cloud Run service account has `roles/cloudsql.client`
+- the worker and migration-job service accounts have `roles/cloudsql.client`
 - you have the GitHub App ID available
 - `ci-obs-github-app-private-key` exists in Secret Manager
 - the Cloud SQL connection name is available as `PROJECT:REGION:INSTANCE`
@@ -231,6 +235,12 @@ gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
   --member=serviceAccount:ci-obs-worker-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com \
   --role=roles/cloudsql.client
 ```
+
+Optional hardening:
+
+- Create a Memorystore Redis instance for shared replay protection.
+- Attach the webhook service to the VPC path that can reach that Redis instance, using a Serverless VPC Access connector or Direct VPC egress according to your network standard.
+- Set `CI_OBS_REPLAY_STORE_URL=redis://REDIS_HOST:6379/0` on the webhook service once connectivity is in place.
 
 Grant secret access only to the service that needs each secret:
 
@@ -259,9 +269,14 @@ gcloud run deploy ci-observability-webhook \
   --platform managed \
   --allow-unauthenticated \
   --service-account ci-obs-webhook-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com \
-  --add-cloudsql-instances PROJECT:REGION:INSTANCE \
   --set-env-vars CI_OBS_PUBSUB_TOPIC=ci-observability-ingestion \
   --set-secrets CI_OBS_WEBHOOK_SECRET=ci-obs-webhook-secret:latest,CI_OBS_WEBHOOK_AUTH_TOKEN=ci-obs-webhook-auth-token:latest
+```
+
+If Redis-backed replay protection is enabled, add:
+
+```bash
+--set-env-vars CI_OBS_PUBSUB_TOPIC=ci-observability-ingestion,CI_OBS_REPLAY_STORE_URL=redis://REDIS_HOST:6379/0
 ```
 
 Deploy the worker service:
@@ -275,7 +290,7 @@ gcloud run deploy ci-observability-worker \
   --no-allow-unauthenticated \
   --service-account ci-obs-worker-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com \
   --add-cloudsql-instances PROJECT:REGION:INSTANCE \
-  --set-env-vars CI_OBS_GITHUB_APP_ID=YOUR_GITHUB_APP_ID \
+  --set-env-vars CI_OBS_GITHUB_APP_ID=YOUR_GITHUB_APP_ID,CI_OBS_MAX_INGESTION_MESSAGE_AGE_SECONDS=3600 \
   --set-secrets CI_OBS_GITHUB_APP_PRIVATE_KEY=ci-obs-github-app-private-key:latest,CI_OBS_DATABASE_URL=ci-obs-database-url:latest
 ```
 
@@ -385,6 +400,28 @@ Then verify:
 - worker receives the push request
 - rows appear in Postgres
 - workflow/job/step rows are persisted as expected
+
+## 14. Backlog cleanup
+
+After fixing broken deployments, inspect and clear stale retry backlog so old failures do not keep polluting logs.
+
+Inspect the worker push subscription and DLQ subscription:
+
+```bash
+gcloud pubsub subscriptions describe ci-observability-worker-push --project YOUR_PROJECT_ID
+gcloud pubsub subscriptions describe ci-observability-ingestion-dlq-sub --project YOUR_PROJECT_ID
+```
+
+Drain stale DLQ messages if they only represent obsolete test failures:
+
+```bash
+gcloud pubsub subscriptions pull ci-observability-ingestion-dlq-sub \
+  --project YOUR_PROJECT_ID \
+  --limit 100 \
+  --auto-ack
+```
+
+The worker-side stale message cutoff reduces the need for future manual cleanup by acknowledging messages older than `CI_OBS_MAX_INGESTION_MESSAGE_AGE_SECONDS` instead of retrying them forever.
 
 ## Security notes
 

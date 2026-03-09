@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     max_pubsub_body_bytes: int = 65_536
     webhook_max_age_seconds: int = 300
     webhook_future_skew_seconds: int = 30
+    max_ingestion_message_age_seconds: int = 3_600
+    replay_store_url: str | None = None
+    replay_store_key_prefix: str = "ci-obs:replay"
 
     def model_post_init(self, __context) -> None:
         if self.environment != "development":

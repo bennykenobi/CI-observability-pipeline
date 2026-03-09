@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime, timedelta
 
 from fastapi import FastAPI, Header, HTTPException, status
 
@@ -48,6 +49,23 @@ def create_app(
             message = WebhookIngestionMessage.model_validate(
                 envelope.decode_data(max_bytes=app_settings.max_pubsub_body_bytes)
             )
+            now = datetime.now(UTC)
+            if now - message.sent_at > timedelta(
+                seconds=app_settings.max_ingestion_message_age_seconds
+            ):
+                logger.warning(
+                    "workflow_ingestion_skipped_stale_message",
+                    extra={
+                        "repository": message.repository_full_name,
+                        "repository_id": message.repository_id,
+                        "run_id": message.run_id,
+                        "run_attempt": message.run_attempt,
+                        "delivery_id": message.delivery_id,
+                        "trace_context": x_cloud_trace_context,
+                        "correlation_id": message.correlation_id,
+                    },
+                )
+                return
             await app_ingestion_service.ingest(message)
             logger.info(
                 "workflow_run_ingested",

@@ -1,6 +1,6 @@
 import base64
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 
@@ -96,3 +96,35 @@ def test_worker_returns_500_when_ingestion_fails():
     )
 
     assert response.status_code == 500
+
+
+def test_worker_acknowledges_stale_pubsub_message_without_ingesting():
+    ingestion_service = RecordingIngestionService()
+    client = TestClient(
+        create_app(
+            settings=Settings(max_ingestion_message_age_seconds=60),
+            ingestion_service=ingestion_service,
+        )
+    )
+    message = WebhookIngestionMessage(
+        action="completed",
+        delivery_id="delivery-old",
+        repository_id=1,
+        repository_full_name="org/repo",
+        run_id=11,
+        run_attempt=1,
+        installation_id=99,
+        sent_at=datetime.now(UTC) - timedelta(hours=1),
+    ).model_dump(mode="json")
+
+    response = client.post(
+        "/pubsub/ingest",
+        json={
+            "message": {
+                "data": base64.b64encode(json.dumps(message).encode("utf-8")).decode("utf-8")
+            }
+        },
+    )
+
+    assert response.status_code == 204
+    assert ingestion_service.messages == []

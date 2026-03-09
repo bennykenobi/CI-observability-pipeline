@@ -5,7 +5,6 @@ import hmac
 import json
 import logging
 from datetime import UTC, datetime, timedelta
-from threading import Lock
 
 from fastapi import FastAPI, Header, HTTPException, Request, Response, status
 from pydantic import ValidationError
@@ -13,26 +12,10 @@ from pydantic import ValidationError
 from shared.config import Settings, get_settings
 from shared.logging import configure_logging
 from shared.pubsub import GooglePubSubPublisher, Publisher
+from shared.replay import ReplayStore, create_replay_store
 from shared.schemas import WebhookIngestionMessage
 
 logger = logging.getLogger(__name__)
-
-
-class InMemoryReplayStore:
-    def __init__(self):
-        self._entries: dict[str, datetime] = {}
-        self._lock = Lock()
-
-    def register(self, delivery_id: str, expires_at: datetime) -> bool:
-        now = datetime.now(UTC)
-        with self._lock:
-            expired = [key for key, value in self._entries.items() if value <= now]
-            for key in expired:
-                del self._entries[key]
-            if delivery_id in self._entries:
-                return False
-            self._entries[delivery_id] = expires_at
-            return True
 
 
 def _signature(secret: str, body: bytes) -> str:
@@ -43,14 +26,14 @@ def _signature(secret: str, body: bytes) -> str:
 def create_app(
     settings: Settings | None = None,
     publisher: Publisher | None = None,
-    replay_store: InMemoryReplayStore | None = None,
+    replay_store: ReplayStore | None = None,
 ) -> FastAPI:
     configure_logging()
     app_settings = settings or get_settings()
     app = FastAPI(title="CI Observability Webhook Service")
     app.state.publisher = publisher
     app.state.settings = app_settings
-    app.state.replay_store = replay_store or InMemoryReplayStore()
+    app.state.replay_store = replay_store or create_replay_store(app_settings)
 
     @app.get("/healthz", status_code=status.HTTP_200_OK)
     async def healthz() -> dict[str, str]:

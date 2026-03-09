@@ -9,8 +9,8 @@ The current phase ends at the platform Postgres boundary. It does not yet push d
 ## Flow
 
 1. A reusable workflow sends a custom observability event when a monitored workflow completes.
-2. The webhook service validates the shared signature and auth token, enforces a short freshness window on `sent_at`, rejects duplicate `delivery_id` values within the replay window, recognizes relevant completed custom events, and publishes an immutable ingestion message to Pub/Sub. It does not call the GitHub API or access Postgres.
-3. The ingestion worker receives the Pub/Sub push message, waits for GitHub API consistency, fetches workflow and paginated jobs data from GitHub, normalizes the results, and stores both normalized rows and raw API payloads in Postgres.
+2. The webhook service validates the shared signature and auth token, enforces a short freshness window on `sent_at`, rejects duplicate `delivery_id` values within the replay window, recognizes relevant completed custom events, and publishes an immutable ingestion message to Pub/Sub. It does not call the GitHub API or access Postgres. In production, replay detection should use a shared TTL-backed store such as Redis rather than in-memory state.
+3. The ingestion worker receives the Pub/Sub push message, acknowledges obviously stale deliveries to avoid endless backlog churn, waits for GitHub API consistency, fetches workflow and paginated jobs data from GitHub, normalizes the results, and stores both normalized rows and raw API payloads in Postgres.
 4. If ingestion fails, the worker returns a non-2xx response so Pub/Sub retry and dead-letter policies can handle delivery.
 
 ## Services
@@ -23,7 +23,7 @@ The current phase ends at the platform Postgres boundary. It does not yet push d
   - shared-signature validation
   - secondary auth-token validation
   - freshness-window enforcement
-  - replay detection by delivery ID
+  - replay detection by delivery ID via shared TTL-backed store when configured
   - relevant custom event recognition
   - Pub/Sub message publication
   - no GitHub API access
@@ -35,6 +35,7 @@ The current phase ends at the platform Postgres boundary. It does not yet push d
 - Health: `GET /healthz`
 - Responsibilities:
   - Pub/Sub push ingestion
+  - stale-message rejection based on message age
   - GitHub App authentication
   - GitHub API retry and pagination handling
   - normalized persistence
@@ -71,4 +72,5 @@ Schema changes are versioned with Alembic so database evolution has a single tra
 - Pub/Sub topic and push subscription between services
 - Cloud SQL Postgres for persistence
 - Secret Manager for runtime secrets
+- Memorystore Redis or equivalent shared TTL store for production replay detection
 - Cloud Armor or equivalent edge protection in front of the public webhook service

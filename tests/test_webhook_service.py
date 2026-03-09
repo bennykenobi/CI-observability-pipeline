@@ -6,9 +6,10 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 
-from services.webhook_service.app import InMemoryReplayStore, create_app
+from services.webhook_service.app import create_app
 from shared.config import Settings
 from shared.pubsub import GooglePubSubPublisher, resolve_topic_path
+from shared.replay import InMemoryReplayStore, RedisReplayStore, create_replay_store
 
 
 class RecordingPublisher:
@@ -284,3 +285,35 @@ def test_google_pubsub_publisher_publishes_expected_payload():
     assert client.calls[0][0] == "projects/example-project/topics/ci-observability-ingestion"
     assert json.loads(client.calls[0][1].decode("utf-8"))["run_id"] == 42
     assert client.calls[0][2]["event_type"] == "workflow_run_completed"
+
+
+class FakeRedisClient:
+    def __init__(self):
+        self.values = {}
+
+    def set(self, key, value, ex=None, nx=False):
+        if nx and key in self.values:
+            return False
+        self.values[key] = {"value": value, "ex": ex}
+        return True
+
+
+def test_redis_replay_store_registers_with_ttl():
+    client = FakeRedisClient()
+    store = RedisReplayStore(client=client, key_prefix="test-prefix")
+    expires_at = datetime.now(UTC) + timedelta(minutes=5)
+
+    first = store.register("delivery-1", expires_at)
+    second = store.register("delivery-1", expires_at)
+
+    assert first is True
+    assert second is False
+    assert client.values["test-prefix:delivery-1"]["ex"] > 0
+
+
+def test_create_replay_store_returns_in_memory_without_redis_url():
+    settings = Settings(webhook_secret="secret", webhook_auth_token="token")
+
+    store = create_replay_store(settings)
+
+    assert isinstance(store, InMemoryReplayStore)
