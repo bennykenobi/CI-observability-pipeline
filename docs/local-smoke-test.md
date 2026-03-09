@@ -55,10 +55,16 @@ docker ps
 Run from the repo root:
 
 ```bash
-C:\Users\Ben\AppData\Roaming\Python\Python313\Scripts\alembic.exe upgrade head
+alembic upgrade head
 ```
 
-If your Python user scripts path is already on `PATH`, `alembic upgrade head` will also work.
+If `alembic` is not on `PATH`:
+
+- Windows with a local virtual environment:
+  - `.\.venv\Scripts\alembic.exe upgrade head`
+- Unix-like shell with a local virtual environment:
+  - `.venv/bin/alembic upgrade head`
+- otherwise invoke the Alembic executable from your Python scripts directory
 
 ## 4. Run automated verification
 

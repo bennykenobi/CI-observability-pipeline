@@ -170,18 +170,19 @@ docker push YOUR_REGION-docker.pkg.dev/YOUR_PROJECT_ID/ci-observability/worker:l
 
 Run this locally with `CI_OBS_DATABASE_URL` pointed at the Cloud SQL DSN.
 
-On Windows, if Alembic is not on `PATH`, use the full executable path:
-
 ```bash
-C:\Users\Ben\AppData\Roaming\Python\Python313\Scripts\alembic.exe upgrade head
+alembic upgrade head
 ```
 
+If `alembic` is not on `PATH`:
+
+- Windows with a local virtual environment:
+  - `.\.venv\Scripts\alembic.exe upgrade head`
+- Unix-like shell with a local virtual environment:
+  - `.venv/bin/alembic upgrade head`
+- otherwise invoke the Alembic executable from your Python scripts directory
+
 ## 9. Deploy Cloud Run services
-
-Use the existing repo deploy scripts as a starting point:
-
-- `deploy/cloud-run/deploy-webhook.ps1`
-- `deploy/cloud-run/deploy-worker.ps1`
 
 Before deployment, ensure:
 
@@ -191,6 +192,36 @@ Before deployment, ensure:
 - secret access is granted only to the relevant service account
 - you have the GitHub App ID available
 - `ci-obs-github-app-private-key` exists in Secret Manager
+
+Deploy the webhook service:
+
+```bash
+gcloud run deploy ci-observability-webhook \
+  --project YOUR_PROJECT_ID \
+  --region YOUR_REGION \
+  --image YOUR_REGION-docker.pkg.dev/YOUR_PROJECT_ID/ci-observability/webhook:latest \
+  --platform managed \
+  --allow-unauthenticated \
+  --set-env-vars CI_OBS_PUBSUB_TOPIC=ci-observability-ingestion,CI_OBS_REPOSITORY_ALLOWLIST='["your-org/your-repo"]' \
+  --set-secrets CI_OBS_WEBHOOK_SECRET=ci-obs-webhook-secret:latest,CI_OBS_DATABASE_URL=ci-obs-database-url:latest
+```
+
+Deploy the worker service:
+
+```bash
+gcloud run deploy ci-observability-worker \
+  --project YOUR_PROJECT_ID \
+  --region YOUR_REGION \
+  --image YOUR_REGION-docker.pkg.dev/YOUR_PROJECT_ID/ci-observability/worker:latest \
+  --platform managed \
+  --no-allow-unauthenticated \
+  --set-env-vars CI_OBS_GITHUB_APP_ID=YOUR_GITHUB_APP_ID,CI_OBS_REPOSITORY_ALLOWLIST='["your-org/your-repo"]' \
+  --set-secrets CI_OBS_GITHUB_APP_PRIVATE_KEY=ci-obs-github-app-private-key:latest,CI_OBS_DATABASE_URL=ci-obs-database-url:latest
+```
+
+Optional:
+
+- the repo also includes PowerShell helper scripts in `deploy/cloud-run/` for users who prefer them
 
 ## 10. GitHub App setup
 
