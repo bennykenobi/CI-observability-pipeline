@@ -1,3 +1,5 @@
+"""Tests for normalization and worker-side ingestion retry classification."""
+
 from datetime import UTC, datetime
 
 import pytest
@@ -20,7 +22,6 @@ def test_build_ingestion_bundle_captures_reusable_workflow_and_steps():
         repository_full_name="org/caller",
         run_id=101,
         run_attempt=1,
-        installation_id=999,
         sent_at=datetime.now(UTC),
     )
     workflow_payload = {
@@ -75,6 +76,8 @@ def test_build_ingestion_bundle_captures_reusable_workflow_and_steps():
 
 
 class RetryGitHubClient:
+    """GitHub client test double that can fail before eventually succeeding."""
+
     def __init__(self, failures_before_success=0):
         self.failures_before_success = failures_before_success
         self.installation_lookup_calls = 0
@@ -110,6 +113,8 @@ class RetryGitHubClient:
 
 
 class RecordingBundleRepository:
+    """Repository test double that records persisted ingestion bundles."""
+
     def __init__(self):
         self.bundles = []
 
@@ -192,6 +197,8 @@ async def test_ingestion_service_raises_after_retry_exhaustion(monkeypatch):
 
 
 class PermanentFailureGitHubClient(RetryGitHubClient):
+    """GitHub client double that always raises a permanent error."""
+
     async def get_workflow_run(self, repository_full_name, run_id, installation_id):
         from shared.github import GitHubApiPermanentError
 

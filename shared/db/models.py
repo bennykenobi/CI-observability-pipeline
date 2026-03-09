@@ -1,3 +1,5 @@
+"""SQLAlchemy ORM models for the normalized and raw ingestion schema."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -8,10 +10,14 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
+    """Base declarative class for all ORM models."""
+
     pass
 
 
 class Repository(Base):
+    """Canonical repository identity used by normalized workflow run records."""
+
     __tablename__ = "repositories"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -29,6 +35,8 @@ class Repository(Base):
 
 
 class WorkflowRun(Base):
+    """Normalized workflow execution record keyed by run and run attempt."""
+
     __tablename__ = "workflow_runs"
     __table_args__ = (
         UniqueConstraint(
@@ -71,6 +79,8 @@ class WorkflowRun(Base):
 
 
 class JobRun(Base):
+    """Normalized job execution record within a workflow run."""
+
     __tablename__ = "job_runs"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -89,6 +99,8 @@ class JobRun(Base):
 
 
 class StepRun(Base):
+    """Normalized step execution record within a job."""
+
     __tablename__ = "step_runs"
     __table_args__ = (UniqueConstraint("job_run_id", "step_number", name="uq_step_runs_job_step"),)
 
@@ -106,6 +118,8 @@ class StepRun(Base):
 
 
 class RawIngestionEvent(Base):
+    """Raw payload record kept for replay, debugging, and schema evolution."""
+
     __tablename__ = "raw_ingestion_events"
     __table_args__ = (
         UniqueConstraint(
@@ -132,6 +146,8 @@ class RawIngestionEvent(Base):
 
 
 class WebhookDelivery(Base):
+    """Durable record of accepted delivery IDs for replay/audit visibility."""
+
     __tablename__ = "webhook_deliveries"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

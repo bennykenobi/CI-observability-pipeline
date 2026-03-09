@@ -1,6 +1,8 @@
+"""Database persistence helpers for normalized and raw ingestion records."""
+
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy.dialects.postgresql import insert
 
@@ -9,47 +11,18 @@ from shared.db.models import (
     RawIngestionEvent,
     Repository,
     StepRun,
-    WebhookDelivery,
     WorkflowRun,
 )
 from shared.db.session import SessionLocal
-from shared.schemas import IngestionBundle, WebhookIngestionMessage
+from shared.schemas import IngestionBundle
 
 
 class IngestionRepository:
-    async def register_webhook_delivery(
-        self,
-        *,
-        delivery_id: str,
-        event_type: str,
-        repository_id: int,
-        run_id: int,
-    ) -> bool:
-        with SessionLocal.begin() as session:
-            stmt = insert(WebhookDelivery).values(
-                delivery_id=delivery_id,
-                event_type=event_type,
-                repository_id=repository_id,
-                run_id=run_id,
-            ).on_conflict_do_nothing()
-            result = session.execute(stmt)
-            return (result.rowcount or 0) > 0
-
-    async def persist_webhook_event(self, message: WebhookIngestionMessage, payload: dict) -> None:
-        with SessionLocal.begin() as session:
-            self._upsert_raw_event(
-                session,
-                source_type="workflow_callback",
-                repository_id=message.repository_id,
-                run_id=message.run_id,
-                run_attempt=message.run_attempt,
-                page_number=None,
-                correlation_id=message.correlation_id,
-                payload=payload,
-                fetched_at=datetime.now(UTC),
-            )
+    """Persist normalized execution bundles into the platform database."""
 
     async def persist_bundle(self, bundle: IngestionBundle) -> None:
+        """Write one normalized ingestion bundle transactionally."""
+
         with SessionLocal.begin() as session:
             repository_id = self._upsert_repository(session, bundle)
             workflow_run_id = self._upsert_workflow_run(session, bundle, repository_id)
@@ -71,6 +44,8 @@ class IngestionRepository:
                 )
 
     def _upsert_repository(self, session, bundle: IngestionBundle) -> int:
+        """Insert or update the repository row and return its primary key."""
+
         stmt = (
             insert(Repository)
             .values(
@@ -90,6 +65,8 @@ class IngestionRepository:
         return session.execute(stmt).scalar_one()
 
     def _upsert_workflow_run(self, session, bundle: IngestionBundle, repository_id: int) -> int:
+        """Upsert the workflow run row and return its primary key."""
+
         values = bundle.workflow_run.model_dump()
         stmt = (
             insert(WorkflowRun)
@@ -107,6 +84,8 @@ class IngestionRepository:
         return session.execute(stmt).scalar_one()
 
     def _upsert_job_run(self, session, workflow_run_id: int, job) -> int:
+        """Upsert one job row and return its primary key."""
+
         values = job.model_dump(exclude={"steps"})
         stmt = (
             insert(JobRun)
@@ -120,6 +99,8 @@ class IngestionRepository:
         return session.execute(stmt).scalar_one()
 
     def _upsert_step_run(self, session, job_run_id: int, step) -> None:
+        """Upsert one step row for a job."""
+
         values = step.model_dump()
         stmt = insert(StepRun).values(job_run_id=job_run_id, **values).on_conflict_do_update(
             index_elements=[StepRun.job_run_id, StepRun.step_number],
@@ -140,6 +121,8 @@ class IngestionRepository:
         payload: dict,
         fetched_at: datetime,
     ) -> None:
+        """Insert a raw payload record unless an identical payload was already stored."""
+
         payload_hash = hashlib.sha256(
             json.dumps(payload, sort_keys=True).encode("utf-8")
         ).hexdigest()

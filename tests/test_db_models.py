@@ -1,3 +1,5 @@
+"""Tests for ORM column types that must handle large GitHub identifiers."""
+
 from sqlalchemy import BigInteger
 
 from shared.db.models import JobRun, RawIngestionEvent, Repository, WebhookDelivery, WorkflowRun

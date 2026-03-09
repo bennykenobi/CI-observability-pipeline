@@ -1,3 +1,5 @@
+"""Pydantic models for event contracts and normalized ingestion records."""
+
 from __future__ import annotations
 
 import base64
@@ -10,6 +12,8 @@ from pydantic import BaseModel, Field
 
 
 class WebhookIngestionMessage(BaseModel):
+    """Compact custom event published by the reusable workflow and Pub/Sub."""
+
     event_type: str = "workflow_run_completed"
     action: str
     delivery_id: str
@@ -18,15 +22,18 @@ class WebhookIngestionMessage(BaseModel):
     repository_full_name: str
     run_id: int
     run_attempt: int
-    installation_id: int | None = None
     sent_at: datetime
 
 
 class PubSubMessageEnvelope(BaseModel):
+    """Pub/Sub push envelope received by the worker service."""
+
     message: dict[str, Any]
     subscription: str | None = None
 
     def decode_data(self, *, max_bytes: int | None = None) -> dict[str, Any]:
+        """Decode and size-check the JSON payload inside a Pub/Sub push envelope."""
+
         raw = self.message.get("data", "")
         decoded = base64.b64decode(raw)
         if max_bytes is not None and len(decoded) > max_bytes:
@@ -35,12 +42,16 @@ class PubSubMessageEnvelope(BaseModel):
 
 
 class RepositoryRecord(BaseModel):
+    """Normalized repository identity used during persistence."""
+
     github_repository_id: int
     full_name: str
     name: str
 
 
 class WorkflowRunRecord(BaseModel):
+    """Normalized workflow-run record ready for database upsert."""
+
     github_run_id: int
     run_attempt: int
     workflow_id: int | None = None
@@ -62,6 +73,8 @@ class WorkflowRunRecord(BaseModel):
 
 
 class StepRunRecord(BaseModel):
+    """Normalized step-level execution record."""
+
     step_number: int
     step_name: str
     status: str | None = None
@@ -72,6 +85,8 @@ class StepRunRecord(BaseModel):
 
 
 class JobRunRecord(BaseModel):
+    """Normalized job-level execution record with nested step records."""
+
     github_job_id: int
     job_name: str
     runner_name: str | None = None
@@ -84,6 +99,8 @@ class JobRunRecord(BaseModel):
 
 
 class RawIngestionEventRecord(BaseModel):
+    """Raw payload persisted for replay, debugging, and schema evolution."""
+
     source_type: str
     repository_id: int
     run_id: int
@@ -95,6 +112,8 @@ class RawIngestionEventRecord(BaseModel):
 
 
 class IngestionBundle(BaseModel):
+    """Normalized and raw records produced from one ingestion attempt."""
+
     repository: RepositoryRecord
     workflow_run: WorkflowRunRecord
     jobs: list[JobRunRecord]

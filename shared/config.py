@@ -1,3 +1,5 @@
+"""Runtime configuration for local development and deployed services."""
+
 from functools import lru_cache
 
 from pydantic import Field
@@ -5,6 +7,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """Application settings loaded from environment variables."""
+
     model_config = SettingsConfigDict(env_file=".env", env_prefix="CI_OBS_", extra="ignore")
 
     environment: str = "development"
@@ -50,4 +54,6 @@ class Settings(BaseSettings):
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
+    """Return a cached settings object for the current process."""
+
     return Settings()

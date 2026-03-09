@@ -1,3 +1,5 @@
+"""Tests for GitHub App auth, installation lookup, and API pagination behavior."""
+
 from __future__ import annotations
 
 import httpx
@@ -8,6 +10,8 @@ from shared.github import GitHubApiPermanentError, GitHubApiUnavailableError, Gi
 
 
 def make_transport(handler):
+    """Wrap a request handler in an httpx mock transport."""
+
     return httpx.MockTransport(handler)
 
 
@@ -45,6 +49,8 @@ async def test_github_client_reuses_installation_token_for_multiple_calls():
 
 
 async def _resolved_token(token: str) -> str:
+    """Return a resolved async token value for token-cache tests."""
+
     return token
 
 

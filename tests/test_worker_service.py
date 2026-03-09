@@ -1,3 +1,5 @@
+"""Tests for worker Pub/Sub decoding and retry classification behavior."""
+
 import base64
 import json
 from datetime import UTC, datetime, timedelta
@@ -11,19 +13,17 @@ from shared.schemas import WebhookIngestionMessage
 
 
 class RecordingIngestionService:
+    """Ingestion-service test double used to control worker outcomes."""
+
     def __init__(self):
         self.messages = []
-        self.raise_error = False
-        self.raise_permanent = False
-        self.raise_retryable = False
+        self.error_to_raise: Exception | None = None
 
     async def ingest(self, message: WebhookIngestionMessage):
-        if self.raise_retryable:
-            raise RuntimeError("boom")
-        if self.raise_permanent:
-            raise IngestionPermanentError("permanent")
-        if self.raise_error:
-            raise IngestionRetryableError("retryable")
+        """Record the message or raise the configured test error."""
+
+        if self.error_to_raise is not None:
+            raise self.error_to_raise
         self.messages.append(message)
 
 
@@ -79,7 +79,7 @@ def test_worker_rejects_oversized_pubsub_message():
 
 def test_worker_returns_500_when_ingestion_fails():
     ingestion_service = RecordingIngestionService()
-    ingestion_service.raise_error = True
+    ingestion_service.error_to_raise = IngestionRetryableError("retryable")
     client = TestClient(create_app(settings=Settings(), ingestion_service=ingestion_service))
     message = WebhookIngestionMessage(
         action="completed",
@@ -105,7 +105,7 @@ def test_worker_returns_500_when_ingestion_fails():
 
 def test_worker_acknowledges_non_retryable_ingestion_failure():
     ingestion_service = RecordingIngestionService()
-    ingestion_service.raise_permanent = True
+    ingestion_service.error_to_raise = IngestionPermanentError("permanent")
     client = TestClient(create_app(settings=Settings(), ingestion_service=ingestion_service))
     message = WebhookIngestionMessage(
         action="completed",

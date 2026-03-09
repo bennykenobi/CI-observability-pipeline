@@ -1,6 +1,6 @@
 PYTHON ?= python
 
-.PHONY: install test run-webhook run-worker build-webhook build-worker db-upgrade db-revision
+.PHONY: install test run-webhook run-worker build-webhook build-worker db-upgrade db-revision db-upgrade-sql
 
 install:
 	$(PYTHON) -m pip install -e .[dev]

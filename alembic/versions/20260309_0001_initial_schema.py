@@ -1,3 +1,5 @@
+"""Initial schema for execution telemetry and raw ingestion persistence."""
+
 from __future__ import annotations
 
 import sqlalchemy as sa
@@ -12,6 +14,8 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Create the initial normalized and raw-ingestion tables."""
+
     op.create_table(
         "repositories",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
@@ -155,6 +159,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Drop the initial normalized and raw-ingestion tables."""
+
     op.drop_table("webhook_deliveries")
     op.drop_table("raw_ingestion_events")
     op.drop_table("step_runs")

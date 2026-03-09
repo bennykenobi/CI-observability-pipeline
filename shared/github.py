@@ -1,3 +1,5 @@
+"""GitHub App authentication and GitHub Actions API access helpers."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -5,16 +7,21 @@ from typing import Any
 
 import httpx
 import jwt
+from opentelemetry.trace import SpanKind
 
 from shared.config import Settings
-from shared.otel import get_tracer, set_span_attributes, span_kind_client
+from shared.otel import get_tracer, set_span_attributes
 
 
 class GitHubApiUnavailableError(RuntimeError):
+    """Raised for transient GitHub API failures that may succeed on retry."""
+
     pass
 
 
 class GitHubApiPermanentError(RuntimeError):
+    """Raised for GitHub API failures that should not be retried blindly."""
+
     pass
 
 
@@ -22,10 +29,14 @@ tracer = get_tracer(__name__)
 
 
 class GitHubAppAuth:
+    """Build GitHub App JWTs and installation tokens for API access."""
+
     def __init__(self, settings: Settings):
         self.settings = settings
 
     def build_jwt(self) -> str:
+        """Build a short-lived GitHub App JWT for installation discovery and auth."""
+
         if not self.settings.github_app_id or not self.settings.github_app_private_key:
             raise RuntimeError("GitHub App credentials are not configured")
         now = datetime.now(UTC)
@@ -36,24 +47,33 @@ class GitHubAppAuth:
         }
         return jwt.encode(payload, self.settings.github_app_private_key, algorithm="RS256")
 
+    def app_headers(self) -> dict[str, str]:
+        """Return GitHub App authentication headers for app-scoped endpoints."""
+
+        return {
+            "Authorization": f"Bearer {self.build_jwt()}",
+            "Accept": "application/vnd.github+json",
+        }
+
     async def installation_token(self, client: httpx.AsyncClient, installation_id: int) -> str:
+        """Exchange the app JWT for an installation token scoped to one installation."""
+
         with tracer.start_as_current_span(
             "github.installation_token",
-            kind=span_kind_client(),
+            kind=SpanKind.CLIENT,
         ) as span:
             set_span_attributes(span, github_installation_id=installation_id)
             response = await client.post(
                 f"{self.settings.github_api_url}/app/installations/{installation_id}/access_tokens",
-                headers={
-                    "Authorization": f"Bearer {self.build_jwt()}",
-                    "Accept": "application/vnd.github+json",
-                },
+                headers=self.app_headers(),
             )
         response.raise_for_status()
         return response.json()["token"]
 
 
 class GitHubClient:
+    """Fetch workflow and job data from GitHub Actions using a GitHub App."""
+
     def __init__(self, settings: Settings, http_client: httpx.AsyncClient | None = None):
         self.settings = settings
         self.auth = GitHubAppAuth(settings)
@@ -62,20 +82,19 @@ class GitHubClient:
         self._token_cache: dict[int, str] = {}
 
     async def installation_id_for_repo(self, repository_full_name: str) -> int:
+        """Resolve and cache the installation ID for a repository."""
+
         installation_id = self._installation_cache.get(repository_full_name)
         if installation_id is not None:
             return installation_id
         with tracer.start_as_current_span(
             "github.installation_lookup",
-            kind=span_kind_client(),
+            kind=SpanKind.CLIENT,
         ) as span:
             set_span_attributes(span, repository=repository_full_name)
             response = await self.http_client.get(
                 f"{self.settings.github_api_url}/repos/{repository_full_name}/installation",
-                headers={
-                    "Authorization": f"Bearer {self.auth.build_jwt()}",
-                    "Accept": "application/vnd.github+json",
-                },
+                headers=self.auth.app_headers(),
             )
         self._raise_for_status(response)
         installation_id = response.json()["id"]
@@ -83,6 +102,8 @@ class GitHubClient:
         return installation_id
 
     async def _headers(self, installation_id: int) -> dict[str, str]:
+        """Return installation-scoped API headers, caching tokens per installation."""
+
         token = self._token_cache.get(installation_id)
         if token is None:
             token = await self.auth.installation_token(self.http_client, installation_id)
@@ -98,10 +119,12 @@ class GitHubClient:
         run_id: int,
         installation_id: int,
     ) -> dict[str, Any]:
+        """Fetch the authoritative GitHub workflow-run payload for one run."""
+
         headers = await self._headers(installation_id)
         with tracer.start_as_current_span(
             "github.get_workflow_run",
-            kind=span_kind_client(),
+            kind=SpanKind.CLIENT,
         ) as span:
             set_span_attributes(
                 span,
@@ -122,13 +145,15 @@ class GitHubClient:
         run_id: int,
         installation_id: int,
     ) -> list[dict[str, Any]]:
+        """Fetch all paginated job payloads for a workflow run."""
+
         headers = await self._headers(installation_id)
         page = 1
         pages: list[dict[str, Any]] = []
         while True:
             with tracer.start_as_current_span(
                 "github.list_jobs_page",
-                kind=span_kind_client(),
+                kind=SpanKind.CLIENT,
             ) as span:
                 set_span_attributes(
                     span,
@@ -151,6 +176,8 @@ class GitHubClient:
 
     @staticmethod
     def _raise_for_status(response: httpx.Response) -> None:
+        """Classify GitHub HTTP errors into retryable and permanent failure types."""
+
         if response.status_code >= 500:
             raise GitHubApiUnavailableError(response.text)
         if response.status_code >= 400:

@@ -1,3 +1,5 @@
+"""Tests for webhook authentication, filtering, replay checks, and Pub/Sub publish."""
+
 import hashlib
 import hmac
 import json
@@ -13,6 +15,8 @@ from shared.replay import InMemoryReplayStore, RedisReplayStore, create_replay_s
 
 
 class RecordingPublisher:
+    """Publisher test double that records messages instead of sending them."""
+
     def __init__(self):
         self.messages = []
 
@@ -21,6 +25,8 @@ class RecordingPublisher:
 
 
 def _signature(secret: str, body: bytes) -> str:
+    """Build the expected signature header for a test payload."""
+
     return "sha256=" + hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
 
 
@@ -36,7 +42,6 @@ def test_completed_custom_event_is_published():
         "repository_full_name": "org/repo",
         "run_id": 99,
         "run_attempt": 2,
-        "installation_id": 777,
         "sent_at": datetime.now(UTC).isoformat(),
     }
     body = json.dumps(payload).encode("utf-8")
@@ -258,6 +263,8 @@ def test_topic_path_resolution_supports_short_and_fully_qualified_names():
 
 
 class RecordingPubSubClient:
+    """Underlying Pub/Sub client test double used by the publisher wrapper."""
+
     def __init__(self):
         self.calls = []
 
@@ -288,6 +295,8 @@ def test_google_pubsub_publisher_publishes_expected_payload():
 
 
 class FakeRedisClient:
+    """Minimal Redis-like client for replay-store tests."""
+
     def __init__(self):
         self.values = {}
 

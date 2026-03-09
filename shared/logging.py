@@ -1,3 +1,5 @@
+"""Structured JSON logging helpers shared by both services."""
+
 import json
 import logging
 from datetime import UTC, datetime
@@ -6,6 +8,8 @@ from shared.otel import current_trace_fields
 
 
 class JsonFormatter(logging.Formatter):
+    """Render log records as JSON with trace context and extra fields."""
+
     def format(self, record: logging.LogRecord) -> str:
         payload = {
             "timestamp": datetime.now(UTC).isoformat(),
@@ -45,11 +49,13 @@ class JsonFormatter(logging.Formatter):
 
 
 def configure_logging(level: int = logging.INFO) -> None:
+    """Configure process-wide JSON logging once and suppress noisy client logs."""
+
     root_logger = logging.getLogger()
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     if root_logger.handlers:
         return
     handler = logging.StreamHandler()
     handler.setFormatter(JsonFormatter())
     root_logger.addHandler(handler)
     root_logger.setLevel(level)
-    logging.getLogger("httpx").setLevel(logging.WARNING)

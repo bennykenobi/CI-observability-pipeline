@@ -1,3 +1,5 @@
+"""Tests for OTEL endpoint parsing and optional audience configuration."""
+
 from shared.config import Settings
 from shared.otel import _derive_audience, _is_local_endpoint
 

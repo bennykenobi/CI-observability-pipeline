@@ -1,3 +1,5 @@
+"""Normalization and orchestration logic for worker-side ingestion."""
+
 from __future__ import annotations
 
 import asyncio
@@ -5,11 +7,12 @@ import logging
 from datetime import datetime
 from typing import Any
 
+from opentelemetry.trace import SpanKind
 from sqlalchemy.exc import SQLAlchemyError
 
 from shared.config import Settings
 from shared.github import GitHubApiPermanentError, GitHubApiUnavailableError, GitHubClient
-from shared.otel import get_tracer, set_span_attributes, span_kind_internal
+from shared.otel import get_tracer, set_span_attributes
 from shared.schemas import (
     IngestionBundle,
     JobRunRecord,
@@ -25,20 +28,28 @@ tracer = get_tracer(__name__)
 
 
 class IngestionRetryableError(RuntimeError):
+    """Raised when an ingestion attempt should be retried later."""
+
     pass
 
 
 class IngestionPermanentError(RuntimeError):
+    """Raised when an ingestion attempt should be acknowledged and dropped."""
+
     pass
 
 
 def _parse_datetime(value: str | None) -> datetime | None:
+    """Parse GitHub timestamp strings into timezone-aware datetimes."""
+
     if not value:
         return None
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
 def _duration_ms(started_at: datetime | None, completed_at: datetime | None) -> int | None:
+    """Return execution duration in milliseconds when both timestamps exist."""
+
     if not started_at or not completed_at:
         return None
     return int((completed_at - started_at).total_seconds() * 1000)
@@ -47,6 +58,8 @@ def _duration_ms(started_at: datetime | None, completed_at: datetime | None) -> 
 def _parse_referenced_workflow(
     reference: dict[str, Any] | None,
 ) -> tuple[str | None, str | None, str | None]:
+    """Split a referenced reusable workflow into repo, path, and ref parts."""
+
     if not reference:
         return None, None, None
     path = reference.get("path")
@@ -64,6 +77,8 @@ def build_ingestion_bundle(
     workflow_payload: dict[str, Any],
     jobs_pages: list[dict[str, Any]],
 ) -> IngestionBundle:
+    """Normalize GitHub workflow and jobs payloads into persistence-ready records."""
+
     started_at = _parse_datetime(
         workflow_payload.get("run_started_at") or workflow_payload.get("created_at")
     )
@@ -158,15 +173,19 @@ def build_ingestion_bundle(
 
 
 class IngestionService:
+    """Own the worker ingestion flow from event message to database persistence."""
+
     def __init__(self, settings: Settings, github_client: GitHubClient, repository):
         self.settings = settings
         self.github_client = github_client
         self.repository = repository
 
     async def ingest(self, message: WebhookIngestionMessage) -> IngestionBundle:
+        """Fetch, normalize, and persist one workflow execution from GitHub."""
+
         with tracer.start_as_current_span(
             "ingestion_service.ingest",
-            kind=span_kind_internal(),
+            kind=SpanKind.INTERNAL,
         ) as span:
             set_span_attributes(
                 span,
@@ -180,11 +199,9 @@ class IngestionService:
             await asyncio.sleep(self.settings.initial_fetch_delay_seconds)
             last_error: Exception | None = None
             try:
-                installation_id = message.installation_id
-                if installation_id is None:
-                    installation_id = await self.github_client.installation_id_for_repo(
-                        message.repository_full_name
-                    )
+                installation_id = await self.github_client.installation_id_for_repo(
+                    message.repository_full_name
+                )
             except GitHubApiUnavailableError as exc:
                 raise IngestionRetryableError("installation_lookup_unavailable") from exc
             except GitHubApiPermanentError as exc:
@@ -194,7 +211,7 @@ class IngestionService:
                 try:
                     with tracer.start_as_current_span(
                         "ingestion_attempt",
-                        kind=span_kind_internal(),
+                        kind=SpanKind.INTERNAL,
                     ) as attempt_span:
                         set_span_attributes(attempt_span, retry_attempt=attempt)
                         workflow_payload = await self.github_client.get_workflow_run(
@@ -210,7 +227,7 @@ class IngestionService:
                         bundle = build_ingestion_bundle(message, workflow_payload, jobs_pages)
                         with tracer.start_as_current_span(
                             "persist_bundle",
-                            kind=span_kind_internal(),
+                            kind=SpanKind.INTERNAL,
                         ):
                             await self.repository.persist_bundle(bundle)
                         return bundle

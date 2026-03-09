@@ -1,3 +1,5 @@
+"""OpenTelemetry setup and helper functions for runtime tracing."""
+
 from __future__ import annotations
 
 from functools import cache
@@ -10,7 +12,6 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.trace import SpanKind
 
 from shared.config import Settings
 
@@ -18,6 +19,8 @@ _CONFIGURED_SERVICES: set[str] = set()
 
 
 def configure_tracing(settings: Settings, service_name: str) -> None:
+    """Configure OTLP trace export once for the given service name."""
+
     if not settings.otel_exporter_otlp_endpoint:
         return
     if service_name in _CONFIGURED_SERVICES:
@@ -38,10 +41,14 @@ def configure_tracing(settings: Settings, service_name: str) -> None:
 
 @cache
 def get_tracer(name: str):
+    """Return a cached tracer for the given module or component name."""
+
     return trace.get_tracer(name)
 
 
 def current_trace_fields() -> dict[str, str]:
+    """Return trace and span IDs for structured logging when a span is active."""
+
     span = trace.get_current_span()
     context = span.get_span_context()
     if not context.is_valid:
@@ -53,25 +60,17 @@ def current_trace_fields() -> dict[str, str]:
 
 
 def set_span_attributes(span, **attributes) -> None:
+    """Attach only non-null attributes to the active span."""
+
     for key, value in attributes.items():
         if value is None:
             continue
         span.set_attribute(key, value)
 
 
-def span_kind_server() -> SpanKind:
-    return SpanKind.SERVER
-
-
-def span_kind_client() -> SpanKind:
-    return SpanKind.CLIENT
-
-
-def span_kind_internal() -> SpanKind:
-    return SpanKind.INTERNAL
-
-
 def _parse_headers(raw_headers: str) -> dict[str, str] | None:
+    """Parse OTLP header configuration from a comma-separated env-var string."""
+
     if not raw_headers:
         return None
     headers: dict[str, str] = {}
@@ -84,6 +83,8 @@ def _parse_headers(raw_headers: str) -> dict[str, str] | None:
 
 
 def _create_otlp_session(settings: Settings):
+    """Create an authenticated OTLP session for non-local collector endpoints."""
+
     endpoint = settings.otel_exporter_otlp_endpoint
     if not endpoint or _is_local_endpoint(endpoint):
         return None
@@ -98,11 +99,15 @@ def _create_otlp_session(settings: Settings):
 
 
 def _derive_audience(endpoint: str) -> str:
+    """Derive the IAM audience from the OTLP endpoint URL."""
+
     parsed = urlparse(endpoint)
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
 def _is_local_endpoint(endpoint: str) -> bool:
+    """Return true when the OTLP endpoint points at a local development host."""
+
     parsed = urlparse(endpoint)
     host = (parsed.hostname or "").lower()
     return host in {"localhost", "127.0.0.1", "::1"}
