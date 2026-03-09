@@ -34,15 +34,21 @@ Recommended homepage URL:
 - your repository URL
 - or a short internal landing page if you have one
 
-Webhook URL:
+Webhook URL and webhook secret:
 
-- if you plan to use the app webhook directly, this would be your deployed webhook endpoint
-- for the current project, repository-level webhook configuration is simpler for first setup, so this can be deferred if desired
+- for the current MVP architecture, the GitHub App is used for API authentication, not as the primary event delivery mechanism
+- the monitored event is a custom callback emitted by the central reusable workflow
+- if GitHub requires these fields during app creation:
+  - use a valid HTTPS URL you control, such as the repository URL
+  - use the same random shared secret you store as `ci-obs-webhook-secret`
+  - enable SSL verification
+  - disable app webhook delivery later if your org does not plan to use GitHub App webhooks
 
-Webhook secret:
+OAuth callback URL:
 
-- use the same secret value you intend to store in `ci-obs-webhook-secret` if you wire GitHub App webhooks directly
-- otherwise leave webhook configuration aligned with your chosen delivery model
+- not used by this project
+- if GitHub requires it, use a harmless stable URL you control such as the repository URL
+- this is not the same thing as the runtime callback endpoint implemented by this project
 
 ## 2. Set permissions
 
@@ -58,11 +64,7 @@ Do not grant write permissions unless a future feature explicitly needs them.
 
 ## 3. Subscribe to events
 
-For this project, the important event is:
-
-- `workflow_run`
-
-If you are using a repository webhook instead of the app webhook for first setup, still keep the app permissions correct because the worker relies on app authentication for API calls.
+For the current MVP, app webhook subscription is not the primary event path. Keep the app permissions correct because the worker relies on app authentication for API calls.
 
 ## 4. Create the app and capture identifiers
 
@@ -96,7 +98,9 @@ For this project, install it on:
 - the repositories whose workflow runs will be ingested
 - the repositories that call the reusable workflows you want to observe
 
-Prefer a bounded installation scope initially rather than all repositories at once.
+If your goal is zero repo-by-repo installation work, install the app at the organization level and choose `All repositories`.
+
+If you want a smaller blast radius for the first test, start with a bounded repo set and expand later.
 
 ## 7. Verify access
 
@@ -115,6 +119,10 @@ After GitHub App setup, you should have:
 - `ci-obs-github-app-private-key`
 
 The worker service needs both.
+
+The webhook service does not rely on native GitHub App webhook delivery in the current architecture.
+
+The GitHub App client secret is not needed for the current architecture.
 
 ## Security notes
 

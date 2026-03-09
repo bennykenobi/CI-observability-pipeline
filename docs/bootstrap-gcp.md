@@ -16,6 +16,16 @@ It is intentionally documentation only:
 - a GitHub repository already created for this project
 - a plan to create a GitHub App for multi-repo access
 
+Recommended order:
+
+1. complete `docs/local-smoke-test.md`
+2. create baseline GCP infrastructure
+3. create and install the GitHub App using `docs/github-app-setup.md`
+4. populate all required secrets
+5. build and push images
+6. deploy services
+7. configure the reusable workflow callback
+
 ## 1. Set project context
 
 Run these locally from any folder:
@@ -72,6 +82,16 @@ gcloud sql instances create ci-observability-pg \
   --region=YOUR_REGION
 ```
 
+If `db-f1-micro` is rejected in your project or region, use a small custom tier such as:
+
+```bash
+gcloud sql instances create ci-observability-pg \
+  --database-version=POSTGRES_16 \
+  --edition=ENTERPRISE \
+  --tier=db-custom-1-3840 \
+  --region=YOUR_REGION
+```
+
 Create the database:
 
 ```bash
@@ -87,6 +107,14 @@ gcloud sql users create ci_observability_app \
   --password="DB_PASSWORD"
 ```
 
+If you lose the password, reset it with:
+
+```bash
+gcloud sql users set-password ci_observability_app \
+  --instance=ci-observability-pg \
+  --password="NEW_DB_PASSWORD"
+```
+
 ## 6. Store secrets in Secret Manager
 
 Create secret containers:
@@ -96,21 +124,29 @@ gcloud secrets create ci-obs-webhook-secret --replication-policy=automatic
 gcloud secrets create ci-obs-database-url --replication-policy=automatic
 ```
 
-Add values interactively or from local files. Do not place secret values in repo files.
+Note:
 
-Examples:
+- `ci-obs-webhook-secret` is now the shared callback secret used between the central reusable workflow and the webhook service.
+- It is no longer intended as a native GitHub webhook secret for this MVP architecture.
+- `ci-obs-database-url` is the full SQLAlchemy connection string, not a randomly generated secret.
+
+Add values in the GCP GUI or from local files. Do not place secret values in repo files.
+
+Values needed at this point:
+
+- `ci-obs-webhook-secret`
+  - random shared secret generated outside the repo, for example in 1Password
+- `ci-obs-database-url`
+  - format:
+  - `postgresql+psycopg://ci_observability_app:DB_PASSWORD@/ci_observability?host=/cloudsql/PROJECT:REGION:INSTANCE`
+
+Get the Cloud SQL connection name with:
 
 ```bash
-printf "YOUR_WEBHOOK_SECRET" | gcloud secrets versions add ci-obs-webhook-secret --data-file=-
+gcloud sql instances describe ci-observability-pg --format="value(connectionName)"
 ```
 
-For the GitHub App private key, use a local file outside the repo:
-
-For the database URL, use the Cloud SQL connection name and store the final runtime DSN in Secret Manager:
-
-```text
-postgresql+psycopg://ci_observability_app:DB_PASSWORD@/ci_observability?host=/cloudsql/PROJECT:REGION:INSTANCE
-```
+Do not create `ci-obs-github-app-private-key` until after the GitHub App exists and you have downloaded the PEM key.
 
 ## 7. Build and push images
 
@@ -132,10 +168,12 @@ docker push YOUR_REGION-docker.pkg.dev/YOUR_PROJECT_ID/ci-observability/worker:l
 
 ## 8. Apply database migrations
 
-Run this locally with `CI_OBS_DATABASE_URL` pointed at the Cloud SQL DSN:
+Run this locally with `CI_OBS_DATABASE_URL` pointed at the Cloud SQL DSN.
+
+On Windows, if Alembic is not on `PATH`, use the full executable path:
 
 ```bash
-alembic upgrade head
+C:\Users\Ben\AppData\Roaming\Python\Python313\Scripts\alembic.exe upgrade head
 ```
 
 ## 9. Deploy Cloud Run services
@@ -147,10 +185,12 @@ Use the existing repo deploy scripts as a starting point:
 
 Before deployment, ensure:
 
-- the webhook service is public only if you are ready to receive GitHub webhooks
+- the webhook service is public only if you are ready to receive custom callback traffic from the reusable workflow layer
 - the worker service is private
 - both services use service accounts with least privilege
 - secret access is granted only to the relevant service account
+- you have the GitHub App ID available
+- `ci-obs-github-app-private-key` exists in Secret Manager
 
 ## 10. GitHub App setup
 
@@ -180,17 +220,15 @@ Also configure authenticated push and Cloud Run invoker permissions so only Pub/
 
 ## 12. Webhook setup
 
-Configure the GitHub webhook to point at:
+Configure the central reusable workflow callback target to point at:
 
 ```text
-https://WEBHOOK_URL/github/webhook
+https://WEBHOOK_URL/workflow/callback
 ```
 
-Use:
+Use the same shared secret value stored in `ci-obs-webhook-secret` when generating the callback signature from the reusable workflow.
 
-- content type: `application/json`
-- secret: the same value stored in `ci-obs-webhook-secret`
-- event: `workflow_run`
+The callback payload should match the application contract implemented by `WebhookIngestionMessage`.
 
 ## 13. First end-to-end test
 
@@ -200,7 +238,7 @@ Use the repo workflow:
 
 Then verify:
 
-- webhook service receives and accepts the delivery
+- callback service receives and accepts the delivery
 - Pub/Sub message is published
 - worker receives the push request
 - rows appear in Postgres

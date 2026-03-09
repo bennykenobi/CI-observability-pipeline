@@ -8,8 +8,8 @@ The current phase ends at the platform Postgres boundary. It does not yet push d
 
 ## Flow
 
-1. GitHub sends a `workflow_run` webhook when a workflow completes.
-2. The webhook service validates the signature, filters to allowed repositories, stores the raw webhook payload, and publishes an immutable ingestion message.
+1. The central reusable workflow sends a custom callback event when a monitored workflow completes.
+2. The webhook service validates the shared signature, filters to allowed repositories, stores the raw callback payload, and publishes an immutable ingestion message.
 3. The ingestion worker receives the Pub/Sub push message, waits for GitHub API consistency, fetches workflow and paginated jobs data, normalizes the results, and stores both normalized rows and raw API payloads in Postgres.
 4. If ingestion fails, the worker returns a non-2xx response so Pub/Sub retry and dead-letter policies can handle delivery.
 
@@ -17,13 +17,13 @@ The current phase ends at the platform Postgres boundary. It does not yet push d
 
 ### Webhook service
 
-- Endpoint: `POST /github/webhook`
+- Endpoint: `POST /workflow/callback`
 - Health: `GET /healthz`
 - Responsibilities:
-  - GitHub signature validation
-  - event filtering
+  - shared-signature validation
+  - callback validation and filtering
   - repository allowlist enforcement
-  - raw webhook payload persistence
+  - raw callback payload persistence
   - Pub/Sub message publication
 
 ### Worker service

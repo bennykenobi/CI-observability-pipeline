@@ -51,20 +51,22 @@ def test_completed_workflow_run_is_published():
     settings = Settings(webhook_secret="secret", repository_allowlist=["org/repo"])
     client = TestClient(create_app(settings=settings, publisher=publisher, repository=repository))
     payload = {
+        "event_type": "workflow_run_completed",
         "action": "completed",
-        "repository": {"id": 1, "full_name": "org/repo"},
-        "workflow_run": {"id": 99, "run_attempt": 2},
-        "installation": {"id": 777},
+        "delivery_id": "delivery-1",
+        "repository_id": 1,
+        "repository_full_name": "org/repo",
+        "run_id": 99,
+        "run_attempt": 2,
+        "installation_id": 777,
     }
     body = json.dumps(payload).encode("utf-8")
 
     response = client.post(
-        "/github/webhook",
+        "/workflow/callback",
         content=body,
         headers={
-            "X-GitHub-Event": "workflow_run",
-            "X-GitHub-Delivery": "delivery-1",
-            "X-Hub-Signature-256": _signature("secret", body),
+            "X-Observability-Signature-256": _signature("secret", body),
         },
     )
 
@@ -81,19 +83,21 @@ def test_non_completed_event_is_ignored():
     settings = Settings(webhook_secret="secret", repository_allowlist=["org/repo"])
     client = TestClient(create_app(settings=settings, publisher=publisher, repository=repository))
     payload = {
-        "action": "requested",
-        "repository": {"id": 1, "full_name": "org/repo"},
-        "workflow_run": {"id": 99, "run_attempt": 1},
+        "event_type": "not_supported",
+        "action": "completed",
+        "delivery_id": "delivery-1",
+        "repository_id": 1,
+        "repository_full_name": "org/repo",
+        "run_id": 99,
+        "run_attempt": 1,
     }
     body = json.dumps(payload).encode("utf-8")
 
     response = client.post(
-        "/github/webhook",
+        "/workflow/callback",
         content=body,
         headers={
-            "X-GitHub-Event": "workflow_run",
-            "X-GitHub-Delivery": "delivery-1",
-            "X-Hub-Signature-256": _signature("secret", body),
+            "X-Observability-Signature-256": _signature("secret", body),
         },
     )
 
@@ -109,20 +113,22 @@ def test_duplicate_delivery_is_ignored_before_publish():
     settings = Settings(webhook_secret="secret", repository_allowlist=["org/repo"])
     client = TestClient(create_app(settings=settings, publisher=publisher, repository=repository))
     payload = {
+        "event_type": "workflow_run_completed",
         "action": "completed",
-        "repository": {"id": 1, "full_name": "org/repo"},
-        "workflow_run": {"id": 99, "run_attempt": 1},
-        "installation": {"id": 777},
+        "delivery_id": "delivery-1",
+        "repository_id": 1,
+        "repository_full_name": "org/repo",
+        "run_id": 99,
+        "run_attempt": 1,
+        "installation_id": 777,
     }
     body = json.dumps(payload).encode("utf-8")
     headers = {
-        "X-GitHub-Event": "workflow_run",
-        "X-GitHub-Delivery": "delivery-1",
-        "X-Hub-Signature-256": _signature("secret", body),
+        "X-Observability-Signature-256": _signature("secret", body),
     }
 
-    first = client.post("/github/webhook", content=body, headers=headers)
-    second = client.post("/github/webhook", content=body, headers=headers)
+    first = client.post("/workflow/callback", content=body, headers=headers)
+    second = client.post("/workflow/callback", content=body, headers=headers)
 
     assert first.status_code == 202
     assert second.status_code == 200
@@ -142,12 +148,10 @@ def test_webhook_payload_limit_rejects_large_body():
     body = json.dumps({"action": "completed"}).encode("utf-8")
 
     response = client.post(
-        "/github/webhook",
+        "/workflow/callback",
         content=body,
         headers={
-            "X-GitHub-Event": "workflow_run",
-            "X-GitHub-Delivery": "delivery-1",
-            "X-Hub-Signature-256": _signature("secret", body),
+            "X-Observability-Signature-256": _signature("secret", body),
         },
     )
 

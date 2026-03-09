@@ -39,7 +39,7 @@ class IngestionRepository:
         with SessionLocal.begin() as session:
             self._upsert_raw_event(
                 session,
-                source_type="webhook",
+                source_type="workflow_callback",
                 repository_id=message.repository_id,
                 run_id=message.run_id,
                 run_attempt=message.run_attempt,

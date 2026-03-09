@@ -29,6 +29,52 @@ jobs:
           echo "Running workflow activity to generate step telemetry"
           sleep 3
 
+      - name: Send observability callback
+        if: ${{ secrets.CI_OBS_CALLBACK_URL != '' && secrets.CI_OBS_CALLBACK_SECRET != '' }}
+        continue-on-error: true
+        env:
+          CI_OBS_CALLBACK_URL: ${{ secrets.CI_OBS_CALLBACK_URL }}
+          CI_OBS_CALLBACK_SECRET: ${{ secrets.CI_OBS_CALLBACK_SECRET }}
+          SCENARIO: ${{ inputs.scenario }}
+          DELIVERY_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        shell: bash
+        run: |
+          python <<'PY'
+          import hashlib
+          import hmac
+          import json
+          import os
+          import urllib.request
+
+          payload = {
+              "event_type": "workflow_run_completed",
+              "action": "completed",
+              "delivery_id": os.environ["DELIVERY_ID"],
+              "repository_id": int("${{ github.repository_id }}"),
+              "repository_full_name": "${{ github.repository }}",
+              "run_id": int("${{ github.run_id }}"),
+              "run_attempt": int("${{ github.run_attempt }}"),
+              "installation_id": None,
+          }
+          body = json.dumps(payload).encode("utf-8")
+          digest = hmac.new(
+              os.environ["CI_OBS_CALLBACK_SECRET"].encode("utf-8"),
+              body,
+              hashlib.sha256,
+          ).hexdigest()
+          request = urllib.request.Request(
+              os.environ["CI_OBS_CALLBACK_URL"].rstrip("/") + "/workflow/callback",
+              data=body,
+              headers={
+                  "Content-Type": "application/json",
+                  "X-Observability-Signature-256": f"sha256={digest}",
+              },
+              method="POST",
+          )
+          with urllib.request.urlopen(request) as response:
+              print(f"Callback status: {response.status}")
+          PY
+
       - name: Emit summary
         run: |
           echo "Completed manual test workflow"

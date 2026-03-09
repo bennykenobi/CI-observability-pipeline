@@ -37,18 +37,16 @@ def create_app(
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
-    @app.post("/github/webhook", status_code=status.HTTP_202_ACCEPTED)
-    async def github_webhook(
+    @app.post("/workflow/callback", status_code=status.HTTP_202_ACCEPTED)
+    async def workflow_callback(
         request: Request,
         response: Response,
-        x_github_event: str = Header(default=""),
-        x_github_delivery: str = Header(default=""),
-        x_hub_signature_256: str = Header(default=""),
+        x_observability_signature_256: str = Header(default=""),
     ) -> dict[str, str]:
         body = await request.body()
         logger.info(
-            "webhook_request_received",
-            extra={"body_size_bytes": len(body), "delivery_id": x_github_delivery},
+            "workflow_callback_received",
+            extra={"body_size_bytes": len(body)},
         )
         if len(body) > app_settings.max_webhook_body_bytes:
             raise HTTPException(
@@ -57,72 +55,59 @@ def create_app(
             )
         if not hmac.compare_digest(
             _signature(app_settings.webhook_secret, body),
-            x_hub_signature_256,
+            x_observability_signature_256,
         ):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid signature",
             )
 
-        payload = json.loads(body)
-        repository = payload.get("repository", {})
-        repository_full_name = repository.get("full_name", "")
-        action = payload.get("action")
-        workflow_run = payload.get("workflow_run", {})
+        payload = WebhookIngestionMessage.model_validate(json.loads(body))
 
-        if x_github_event != "workflow_run" or action != "completed":
+        if payload.event_type != "workflow_run_completed":
             response.status_code = status.HTTP_200_OK
             return {"status": "ignored"}
 
         if (
             app_settings.repository_allowlist
-            and repository_full_name not in app_settings.repository_allowlist
+            and payload.repository_full_name not in app_settings.repository_allowlist
         ):
             response.status_code = status.HTTP_200_OK
             return {"status": "ignored"}
 
         accepted = await app_repository.register_webhook_delivery(
-            delivery_id=x_github_delivery,
-            event_type=x_github_event,
-            repository_id=repository["id"],
-            run_id=workflow_run["id"],
+            delivery_id=payload.delivery_id,
+            event_type=payload.event_type,
+            repository_id=payload.repository_id,
+            run_id=payload.run_id,
         )
         if not accepted:
             response.status_code = status.HTTP_200_OK
             logger.info(
-                "duplicate_webhook_delivery_ignored",
+                "duplicate_workflow_callback_ignored",
                 extra={
-                    "delivery_id": x_github_delivery,
-                    "repository_id": repository["id"],
-                    "run_id": workflow_run["id"],
+                    "delivery_id": payload.delivery_id,
+                    "repository_id": payload.repository_id,
+                    "run_id": payload.run_id,
                 },
             )
             return {"status": "duplicate"}
 
-        message = WebhookIngestionMessage(
-            action=action,
-            delivery_id=x_github_delivery,
-            repository_id=repository["id"],
-            repository_full_name=repository_full_name,
-            run_id=workflow_run["id"],
-            run_attempt=workflow_run.get("run_attempt", 1),
-            installation_id=(payload.get("installation") or {}).get("id"),
-        )
-        await app_repository.persist_webhook_event(message, payload)
+        await app_repository.persist_webhook_event(payload, payload.model_dump(mode="json"))
         await _get_publisher(app).publish(
             app_settings.pubsub_topic,
-            message.model_dump(mode="json"),
+            payload.model_dump(mode="json"),
         )
         logger.info(
-            "workflow_run_enqueued",
+            "workflow_callback_enqueued",
             extra={
-                "repository": repository_full_name,
-                "repository_id": repository["id"],
-                "run_id": workflow_run["id"],
-                "run_attempt": workflow_run.get("run_attempt", 1),
-                "event_type": x_github_event,
-                "delivery_id": x_github_delivery,
-                "correlation_id": message.correlation_id,
+                "repository": payload.repository_full_name,
+                "repository_id": payload.repository_id,
+                "run_id": payload.run_id,
+                "run_attempt": payload.run_attempt,
+                "event_type": payload.event_type,
+                "delivery_id": payload.delivery_id,
+                "correlation_id": payload.correlation_id,
                 "body_size_bytes": len(body),
             },
         )

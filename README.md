@@ -7,10 +7,10 @@ This MVP intentionally persists both normalized execution telemetry and raw webh
 ## Services
 
 - `services/webhook_service/app.py`
-  - Receives `workflow_run` completion webhooks
-  - Validates the GitHub signature
+  - Receives custom workflow callback events from the central reusable workflow
+  - Validates the shared HMAC signature
   - Filters to allowlisted repositories
-  - Persists the raw webhook payload
+  - Persists the raw callback payload
   - Publishes an immutable ingestion message
 
 - `services/ingestion_worker/app.py`
@@ -49,7 +49,7 @@ Raw payload storage:
 
 Copy `.env.example` to `.env` and set:
 
-- GitHub webhook secret
+- callback shared secret
 - GitHub App credentials
 - repository allowlist
 - Postgres connection string
@@ -58,7 +58,7 @@ Security-sensitive notes:
 
 - Do not rely on default development credentials in deployed environments.
 - Persisted raw payloads should be protected by database access controls and a retention policy.
-- Webhook deliveries are deduplicated by GitHub delivery ID to reduce replay risk.
+- Callback deliveries are deduplicated by delivery ID to reduce replay risk.
 - Request body sizes are logged and enforced by configurable ingress limits.
 
 ## Run
@@ -117,7 +117,7 @@ python -m ruff check .
 ## GitHub Workflows
 
 - `.github/workflows/ci.yml` runs tests on pushes and pull requests.
-- `.github/workflows/manual-test.yml` is a small manually triggered workflow that generates a real `workflow_run` completion event for webhook/integration testing.
+- `.github/workflows/manual-test.yml` is a small manually triggered workflow that can send a signed callback to the webhook service when `CI_OBS_CALLBACK_URL` and `CI_OBS_CALLBACK_SECRET` are configured as GitHub Actions secrets.
 
 ## Deployment
 

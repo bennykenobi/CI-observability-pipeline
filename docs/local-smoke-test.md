@@ -11,7 +11,7 @@ Confirm the local stack can:
 - start both services
 - pass the existing automated tests
 
-This is not a full end-to-end GitHub webhook simulation. It is a local readiness check.
+This is not a full end-to-end custom callback simulation. It is a local readiness check.
 
 ## Prerequisites
 
@@ -38,6 +38,8 @@ Do not use production credentials locally.
 
 ## 2. Start Postgres
 
+If Docker Desktop is not running, start it first.
+
 ```bash
 docker compose up -d postgres
 ```
@@ -53,8 +55,10 @@ docker ps
 Run from the repo root:
 
 ```bash
-alembic upgrade head
+C:\Users\Ben\AppData\Roaming\Python\Python313\Scripts\alembic.exe upgrade head
 ```
+
+If your Python user scripts path is already on `PATH`, `alembic upgrade head` will also work.
 
 ## 4. Run automated verification
 
@@ -104,7 +108,7 @@ This smoke test proves:
 
 It does not prove:
 
-- real GitHub webhook delivery
+- real reusable-workflow callback delivery
 - real Pub/Sub publication
 - real GitHub App authentication
 - Cloud Run / Pub/Sub IAM setup
