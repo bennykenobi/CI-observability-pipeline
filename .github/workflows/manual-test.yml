@@ -1,0 +1,35 @@
+name: Manual Ingestion Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: "Free-form marker so each test run is easy to identify"
+        required: false
+        default: "manual-smoke"
+
+jobs:
+  observability-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Echo context
+        run: |
+          echo "Scenario: ${{ inputs.scenario }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Run ID: ${{ github.run_id }}"
+          echo "Run attempt: ${{ github.run_attempt }}"
+
+      - name: Simulate setup
+        run: |
+          echo "Preparing smoke test"
+          sleep 2
+
+      - name: Simulate workload
+        run: |
+          echo "Running workflow activity to generate step telemetry"
+          sleep 3
+
+      - name: Emit summary
+        run: |
+          echo "Completed manual test workflow"
+
