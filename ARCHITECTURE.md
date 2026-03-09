@@ -64,6 +64,8 @@ Raw payload storage is intentional. The monitored workflows are still evolving, 
 
 Schema changes are versioned with Alembic so database evolution has a single tracked migration path.
 
+For the table-level schema map, see [docs/data-model.md](docs/data-model.md).
+
 ## Delivery semantics
 
 - Delivery is at-least-once.

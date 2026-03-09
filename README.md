@@ -39,6 +39,8 @@ Or use:
 make db-upgrade
 ```
 
+For a table-by-table schema reference, see [docs/data-model.md](docs/data-model.md).
+
 For deployed environments, run migrations from the same container image in GCP rather than from a laptop. The recommended pattern is a Cloud Run Job that executes `alembic upgrade head` against the production database before rolling out service revisions.
 
 Normalized tables:
