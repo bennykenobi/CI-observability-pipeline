@@ -30,7 +30,6 @@ jobs:
           sleep 3
 
       - name: Send observability callback
-        if: ${{ secrets.CI_OBS_CALLBACK_URL != '' && secrets.CI_OBS_CALLBACK_SECRET != '' }}
         continue-on-error: true
         env:
           CI_OBS_CALLBACK_URL: ${{ secrets.CI_OBS_CALLBACK_URL }}
@@ -39,6 +38,11 @@ jobs:
           DELIVERY_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         shell: bash
         run: |
+          if [ -z "$CI_OBS_CALLBACK_URL" ] || [ -z "$CI_OBS_CALLBACK_SECRET" ]; then
+            echo "Callback secrets not configured, skipping callback step"
+            exit 0
+          fi
+
           python <<'PY'
           import hashlib
           import hmac
