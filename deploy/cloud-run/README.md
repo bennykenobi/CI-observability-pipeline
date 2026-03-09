@@ -28,6 +28,22 @@ Worker service also needs:
 - `CI_OBS_GITHUB_APP_ID`
 - `CI_OBS_GITHUB_APP_PRIVATE_KEY`
 
+All runtime workloads that touch Postgres also need the Cloud SQL instance attached with:
+
+- `--add-cloudsql-instances PROJECT:REGION:INSTANCE`
+
+The same application image can also be used for schema migrations via a Cloud Run Job that runs:
+
+- `alembic upgrade head`
+
 ## Deploy
 
 Use the helper scripts in this folder or adapt them to your environment.
+
+Recommended deployment order:
+
+1. build and push the image
+2. create or update the migration job
+3. execute the migration job successfully
+4. deploy webhook
+5. deploy worker

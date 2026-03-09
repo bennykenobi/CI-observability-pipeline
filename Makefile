@@ -14,6 +14,9 @@ db-upgrade:
 db-revision:
 	alembic revision --autogenerate -m "$(m)"
 
+db-upgrade-sql:
+	alembic upgrade head --sql
+
 run-webhook:
 	uvicorn services.webhook_service.app:app --reload
 

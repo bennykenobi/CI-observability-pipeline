@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -14,8 +14,8 @@ class Base(DeclarativeBase):
 class Repository(Base):
     __tablename__ = "repositories"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    github_repository_id: Mapped[int] = mapped_column(Integer, unique=True, nullable=False)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    github_repository_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -39,11 +39,11 @@ class WorkflowRun(Base):
         ),
     )
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     repository_id: Mapped[int] = mapped_column(ForeignKey("repositories.id"), nullable=False)
-    github_run_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    github_run_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     run_attempt: Mapped[int] = mapped_column(Integer, nullable=False)
-    workflow_id: Mapped[int | None] = mapped_column(Integer)
+    workflow_id: Mapped[int | None] = mapped_column(BigInteger)
     workflow_name: Mapped[str | None] = mapped_column(String(255))
     workflow_path: Mapped[str | None] = mapped_column(String(512))
     caller_workflow_path: Mapped[str | None] = mapped_column(String(512))
@@ -73,9 +73,9 @@ class WorkflowRun(Base):
 class JobRun(Base):
     __tablename__ = "job_runs"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     workflow_run_id: Mapped[int] = mapped_column(ForeignKey("workflow_runs.id"), nullable=False)
-    github_job_id: Mapped[int] = mapped_column(Integer, unique=True, nullable=False)
+    github_job_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False)
     job_name: Mapped[str] = mapped_column(String(255), nullable=False)
     runner_name: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str | None] = mapped_column(String(64))
@@ -92,7 +92,7 @@ class StepRun(Base):
     __tablename__ = "step_runs"
     __table_args__ = (UniqueConstraint("job_run_id", "step_number", name="uq_step_runs_job_step"),)
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     job_run_id: Mapped[int] = mapped_column(ForeignKey("job_runs.id"), nullable=False)
     step_number: Mapped[int] = mapped_column(Integer, nullable=False)
     step_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -119,10 +119,10 @@ class RawIngestionEvent(Base):
         ),
     )
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     source_type: Mapped[str] = mapped_column(String(64), nullable=False)
-    repository_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    run_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    repository_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    run_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     run_attempt: Mapped[int] = mapped_column(Integer, nullable=False)
     page_number: Mapped[int | None] = mapped_column(Integer)
     correlation_id: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -134,11 +134,11 @@ class RawIngestionEvent(Base):
 class WebhookDelivery(Base):
     __tablename__ = "webhook_deliveries"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     delivery_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
-    repository_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    run_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    repository_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    run_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -23,8 +23,9 @@ Recommended order:
 3. create and install the GitHub App using `docs/github-app-setup.md`
 4. populate all required secrets
 5. build and push images
-6. deploy services
-7. configure the reusable workflow callback
+6. create or update the migration job and run it
+7. deploy services
+8. configure the reusable workflow callback
 
 ## 1. Set project context
 
@@ -166,21 +167,33 @@ docker push YOUR_REGION-docker.pkg.dev/YOUR_PROJECT_ID/ci-observability/webhook:
 docker push YOUR_REGION-docker.pkg.dev/YOUR_PROJECT_ID/ci-observability/worker:latest
 ```
 
-## 8. Apply database migrations
+## 8. Create and run the migration job
 
-Run this locally with `CI_OBS_DATABASE_URL` pointed at the Cloud SQL DSN.
+Use the same container image as the services. This keeps the artifact footprint small while still giving migrations an explicit execution path.
+
+Create or update the Cloud Run Job:
 
 ```bash
-alembic upgrade head
+gcloud run jobs deploy ci-observability-migrate \
+  --project YOUR_PROJECT_ID \
+  --region YOUR_REGION \
+  --image YOUR_REGION-docker.pkg.dev/YOUR_PROJECT_ID/ci-observability/webhook:latest \
+  --command alembic \
+  --args upgrade,head \
+  --set-secrets CI_OBS_DATABASE_URL=ci-obs-database-url:latest \
+  --add-cloudsql-instances PROJECT:REGION:INSTANCE
 ```
 
-If `alembic` is not on `PATH`:
+Run the job before deploying service revisions that depend on schema changes:
 
-- Windows with a local virtual environment:
-  - `.\.venv\Scripts\alembic.exe upgrade head`
-- Unix-like shell with a local virtual environment:
-  - `.venv/bin/alembic upgrade head`
-- otherwise invoke the Alembic executable from your Python scripts directory
+```bash
+gcloud run jobs execute ci-observability-migrate \
+  --project YOUR_PROJECT_ID \
+  --region YOUR_REGION \
+  --wait
+```
+
+The job should complete successfully before webhook or worker deployments are rolled out.
 
 ## 9. Deploy Cloud Run services
 
@@ -190,8 +203,10 @@ Before deployment, ensure:
 - the worker service is private
 - both services use service accounts with least privilege
 - secret access is granted only to the relevant service account
+- the Cloud Run service account has `roles/cloudsql.client`
 - you have the GitHub App ID available
 - `ci-obs-github-app-private-key` exists in Secret Manager
+- the Cloud SQL connection name is available as `PROJECT:REGION:INSTANCE`
 
 Deploy the webhook service:
 
@@ -202,6 +217,7 @@ gcloud run deploy ci-observability-webhook \
   --image YOUR_REGION-docker.pkg.dev/YOUR_PROJECT_ID/ci-observability/webhook:latest \
   --platform managed \
   --allow-unauthenticated \
+  --add-cloudsql-instances PROJECT:REGION:INSTANCE \
   --set-env-vars CI_OBS_PUBSUB_TOPIC=ci-observability-ingestion,CI_OBS_REPOSITORY_ALLOWLIST='["your-org/your-repo"]' \
   --set-secrets CI_OBS_WEBHOOK_SECRET=ci-obs-webhook-secret:latest,CI_OBS_DATABASE_URL=ci-obs-database-url:latest
 ```
@@ -215,6 +231,7 @@ gcloud run deploy ci-observability-worker \
   --image YOUR_REGION-docker.pkg.dev/YOUR_PROJECT_ID/ci-observability/worker:latest \
   --platform managed \
   --no-allow-unauthenticated \
+  --add-cloudsql-instances PROJECT:REGION:INSTANCE \
   --set-env-vars CI_OBS_GITHUB_APP_ID=YOUR_GITHUB_APP_ID,CI_OBS_REPOSITORY_ALLOWLIST='["your-org/your-repo"]' \
   --set-secrets CI_OBS_GITHUB_APP_PRIVATE_KEY=ci-obs-github-app-private-key:latest,CI_OBS_DATABASE_URL=ci-obs-database-url:latest
 ```
