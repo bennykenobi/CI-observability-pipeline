@@ -4,7 +4,7 @@
 
 This project is a workflow-agnostic GitHub Actions ingestion skeleton. It captures workflow run, job, and step execution telemetry across multiple repositories and persists both normalized records and raw payloads into the platform database.
 
-The current phase ends at the platform Postgres boundary. It does not yet push data to New Relic, derive governance metrics, or populate a downstream reporting database.
+The current phase ends at the platform Postgres boundary for execution telemetry. Runtime traces are emitted through OpenTelemetry into GCP-controlled telemetry infrastructure first. The platform does not treat New Relic as the primary backend; vendor export remains a downstream concern.
 
 ## Flow
 
@@ -12,6 +12,13 @@ The current phase ends at the platform Postgres boundary. It does not yet push d
 2. The webhook service validates the shared signature and auth token, enforces a short freshness window on `sent_at`, rejects duplicate `delivery_id` values within the replay window, recognizes relevant completed custom events, and publishes an immutable ingestion message to Pub/Sub. It does not call the GitHub API or access Postgres. In production, replay detection should use a shared TTL-backed store such as Redis rather than in-memory state.
 3. The ingestion worker receives the Pub/Sub push message, acknowledges obviously stale deliveries to avoid endless backlog churn, waits for GitHub API consistency, fetches workflow and paginated jobs data from GitHub, normalizes the results, and stores both normalized rows and raw API payloads in Postgres.
 4. If ingestion fails, the worker returns a non-2xx response so Pub/Sub retry and dead-letter policies can handle delivery.
+
+## Runtime Telemetry Flow
+
+1. Webhook and worker services emit OpenTelemetry spans around request handling, Pub/Sub handoff, GitHub API fetches, and persistence.
+2. Those spans are exported to an OTLP endpoint owned by the platform in GCP, typically an OpenTelemetry Collector running in GCP as a private internal platform component.
+3. The collector exports to GCP backends such as Cloud Trace and Cloud Monitoring.
+4. Platform analysis and correlation can then combine runtime traces with execution telemetry in Postgres before any optional downstream vendor export.
 
 ## Services
 
@@ -74,3 +81,5 @@ Schema changes are versioned with Alembic so database evolution has a single tra
 - Secret Manager for runtime secrets
 - Memorystore Redis or equivalent shared TTL store for production replay detection
 - Cloud Armor or equivalent edge protection in front of the public webhook service
+- OTEL exporter support for trace emission from webhook, worker, GitHub API fetches, and persistence
+- GCP-controlled OTLP ingestion path, typically via an OpenTelemetry Collector, as the primary runtime telemetry boundary

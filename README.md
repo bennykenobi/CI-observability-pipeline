@@ -70,6 +70,8 @@ Security-sensitive notes:
 - Request body sizes are logged and enforced by configurable ingress limits.
 - The webhook uses `CI_OBS_REPLAY_STORE_URL` when provided to enforce replay protection through a shared TTL-backed store such as Redis. Without it, replay protection falls back to in-memory state and is only reliable per service instance.
 - The worker uses `CI_OBS_MAX_INGESTION_MESSAGE_AGE_SECONDS` to discard stale Pub/Sub messages instead of retrying old backlog forever.
+- OTEL tracing is a first-class runtime concern. In deployed environments, `CI_OBS_OTEL_EXPORTER_OTLP_ENDPOINT` must point at the deployed GCP collector or GCP-controlled OTLP boundary, not a local endpoint. `localhost` values in `.env.example` are for local development only. Vendor systems like New Relic should remain downstream export targets, not the primary backend.
+- The OTEL collector should be deployed as a private platform component. Webhook and worker should reach it through authenticated GCP service-to-service calls, not through a public unauthenticated endpoint.
 
 ## Run
 
@@ -133,9 +135,15 @@ python -m ruff check .
 
 Starter Cloud Run deployment scripts and notes are in `deploy/cloud-run/`.
 
+Note:
+
+- the runbooks distinguish between the current working deployment path and the recommended hardened target state
+- dedicated service accounts remain a follow-on hardening step if you have not adopted them yet
+
 Additional runbooks:
 
 - `docs/bootstrap-gcp.md`
+- `docs/bootstrap-otel-gcp.md`
 - `docs/github-app-setup.md`
 - `docs/local-smoke-test.md`
 

@@ -30,7 +30,6 @@ def test_worker_decodes_pubsub_message_and_invokes_ingestion():
         repository_full_name="org/repo",
         run_id=11,
         run_attempt=1,
-        installation_id=99,
         sent_at=datetime.now(UTC),
     ).model_dump(mode="json")
 
@@ -82,7 +81,6 @@ def test_worker_returns_500_when_ingestion_fails():
         repository_full_name="org/repo",
         run_id=11,
         run_attempt=1,
-        installation_id=99,
         sent_at=datetime.now(UTC),
     ).model_dump(mode="json")
 
@@ -113,7 +111,6 @@ def test_worker_acknowledges_stale_pubsub_message_without_ingesting():
         repository_full_name="org/repo",
         run_id=11,
         run_attempt=1,
-        installation_id=99,
         sent_at=datetime.now(UTC) - timedelta(hours=1),
     ).model_dump(mode="json")
 

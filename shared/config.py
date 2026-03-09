@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     max_ingestion_message_age_seconds: int = 3_600
     replay_store_url: str | None = None
     replay_store_key_prefix: str = "ci-obs:replay"
+    otel_exporter_otlp_endpoint: str | None = None
+    otel_exporter_otlp_audience: str | None = None
+    otel_exporter_otlp_headers: str = ""
 
     def model_post_init(self, __context) -> None:
         if self.environment != "development":
@@ -35,6 +38,10 @@ class Settings(BaseSettings):
                 raise ValueError("CI_OBS_WEBHOOK_SECRET must be set outside development")
             if not self.webhook_auth_token:
                 raise ValueError("CI_OBS_WEBHOOK_AUTH_TOKEN must be set outside development")
+            if not self.otel_exporter_otlp_endpoint:
+                raise ValueError(
+                    "CI_OBS_OTEL_EXPORTER_OTLP_ENDPOINT must be set outside development"
+                )
 
 
 @lru_cache(maxsize=1)

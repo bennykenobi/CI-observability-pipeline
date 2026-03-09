@@ -7,10 +7,14 @@ import httpx
 import jwt
 
 from shared.config import Settings
+from shared.otel import get_tracer, set_span_attributes, span_kind_client
 
 
 class GitHubApiUnavailableError(RuntimeError):
     pass
+
+
+tracer = get_tracer(__name__)
 
 
 class GitHubAppAuth:
@@ -29,13 +33,18 @@ class GitHubAppAuth:
         return jwt.encode(payload, self.settings.github_app_private_key, algorithm="RS256")
 
     async def installation_token(self, client: httpx.AsyncClient, installation_id: int) -> str:
-        response = await client.post(
-            f"{self.settings.github_api_url}/app/installations/{installation_id}/access_tokens",
-            headers={
-                "Authorization": f"Bearer {self.build_jwt()}",
-                "Accept": "application/vnd.github+json",
-            },
-        )
+        with tracer.start_as_current_span(
+            "github.installation_token",
+            kind=span_kind_client(),
+        ) as span:
+            set_span_attributes(span, github_installation_id=installation_id)
+            response = await client.post(
+                f"{self.settings.github_api_url}/app/installations/{installation_id}/access_tokens",
+                headers={
+                    "Authorization": f"Bearer {self.build_jwt()}",
+                    "Accept": "application/vnd.github+json",
+                },
+            )
         response.raise_for_status()
         return response.json()["token"]
 
@@ -52,13 +61,18 @@ class GitHubClient:
         installation_id = self._installation_cache.get(repository_full_name)
         if installation_id is not None:
             return installation_id
-        response = await self.http_client.get(
-            f"{self.settings.github_api_url}/repos/{repository_full_name}/installation",
-            headers={
-                "Authorization": f"Bearer {self.auth.build_jwt()}",
-                "Accept": "application/vnd.github+json",
-            },
-        )
+        with tracer.start_as_current_span(
+            "github.installation_lookup",
+            kind=span_kind_client(),
+        ) as span:
+            set_span_attributes(span, repository=repository_full_name)
+            response = await self.http_client.get(
+                f"{self.settings.github_api_url}/repos/{repository_full_name}/installation",
+                headers={
+                    "Authorization": f"Bearer {self.auth.build_jwt()}",
+                    "Accept": "application/vnd.github+json",
+                },
+            )
         if response.status_code >= 500:
             raise GitHubApiUnavailableError(response.text)
         response.raise_for_status()
@@ -83,10 +97,20 @@ class GitHubClient:
         installation_id: int,
     ) -> dict[str, Any]:
         headers = await self._headers(installation_id)
-        response = await self.http_client.get(
-            f"{self.settings.github_api_url}/repos/{repository_full_name}/actions/runs/{run_id}",
-            headers=headers,
-        )
+        with tracer.start_as_current_span(
+            "github.get_workflow_run",
+            kind=span_kind_client(),
+        ) as span:
+            set_span_attributes(
+                span,
+                repository=repository_full_name,
+                github_run_id=run_id,
+                github_installation_id=installation_id,
+            )
+            response = await self.http_client.get(
+                f"{self.settings.github_api_url}/repos/{repository_full_name}/actions/runs/{run_id}",
+                headers=headers,
+            )
         if response.status_code >= 500:
             raise GitHubApiUnavailableError(response.text)
         response.raise_for_status()
@@ -102,11 +126,22 @@ class GitHubClient:
         page = 1
         pages: list[dict[str, Any]] = []
         while True:
-            response = await self.http_client.get(
-                f"{self.settings.github_api_url}/repos/{repository_full_name}/actions/runs/{run_id}/jobs",
-                headers=headers,
-                params={"per_page": 100, "page": page},
-            )
+            with tracer.start_as_current_span(
+                "github.list_jobs_page",
+                kind=span_kind_client(),
+            ) as span:
+                set_span_attributes(
+                    span,
+                    repository=repository_full_name,
+                    github_run_id=run_id,
+                    github_installation_id=installation_id,
+                    page=page,
+                )
+                response = await self.http_client.get(
+                    f"{self.settings.github_api_url}/repos/{repository_full_name}/actions/runs/{run_id}/jobs",
+                    headers=headers,
+                    params={"per_page": 100, "page": page},
+                )
             if response.status_code >= 500:
                 raise GitHubApiUnavailableError(response.text)
             response.raise_for_status()

@@ -147,6 +147,7 @@ Values needed at this point:
 Optional hardening:
 
 - If you want shared replay protection across multiple webhook instances, also provision a Redis-compatible TTL store such as Memorystore and plan to set `CI_OBS_REPLAY_STORE_URL` on the webhook service.
+- Decide on your GCP-side OTLP ingestion path and plan to set `CI_OBS_OTEL_EXPORTER_OTLP_ENDPOINT` on both services. The intended model is OTEL -> GCP collector / GCP observability backend first, with any vendor export handled downstream. Do not leave this set to a local `localhost` endpoint in deployed environments.
 
 Get the Cloud SQL connection name with:
 
@@ -205,16 +206,23 @@ The job should complete successfully before webhook or worker deployments are ro
 
 ## 9. Deploy Cloud Run services
 
+There are two valid deployment modes:
+
+- current working baseline:
+  - webhook and worker can continue using the existing service-account model already proven in the environment
+- recommended hardened target state:
+  - move webhook and worker to dedicated least-privilege service accounts
+
 Before deployment, ensure:
 
-- the webhook service uses a dedicated service account, not the default compute account
-- the worker service is private
-- both services use service accounts with least privilege
-- secret access is granted only to the relevant service account
-- the worker and migration-job service accounts have `roles/cloudsql.client`
+- the worker is private
+- the relevant runtime identity can read the required secrets
+- the worker and migration runtime identity have `roles/cloudsql.client`
 - you have the GitHub App ID available
 - `ci-obs-github-app-private-key` exists in Secret Manager
 - the Cloud SQL connection name is available as `PROJECT:REGION:INSTANCE`
+
+Recommended hardened target state:
 
 Create dedicated service accounts:
 
@@ -259,6 +267,12 @@ gcloud secrets add-iam-policy-binding ci-obs-github-app-private-key \
   --role=roles/secretmanager.secretAccessor
 ```
 
+Current working baseline:
+
+- if you have not yet migrated to dedicated service accounts, keep using the existing service identity and grant it only the minimum roles required for the current deployment
+
+Recommended hardened target state:
+
 Deploy the webhook service:
 
 ```bash
@@ -279,6 +293,12 @@ If Redis-backed replay protection is enabled, add:
 --set-env-vars CI_OBS_PUBSUB_TOPIC=ci-observability-ingestion,CI_OBS_REPLAY_STORE_URL=redis://REDIS_HOST:6379/0
 ```
 
+Add the OTLP exporter configuration to the webhook deployment. Point it at the deployed GCP collector service URL or another GCP-controlled OTLP boundary, not a local endpoint:
+
+```bash
+--set-env-vars CI_OBS_PUBSUB_TOPIC=ci-observability-ingestion,CI_OBS_OTEL_EXPORTER_OTLP_ENDPOINT=https://YOUR_COLLECTOR_SERVICE_URL/v1/traces
+```
+
 Deploy the worker service:
 
 ```bash
@@ -294,9 +314,22 @@ gcloud run deploy ci-observability-worker \
   --set-secrets CI_OBS_GITHUB_APP_PRIVATE_KEY=ci-obs-github-app-private-key:latest,CI_OBS_DATABASE_URL=ci-obs-database-url:latest
 ```
 
+Add the same GCP-first OTLP settings to the worker deployment. Use the deployed collector service URL:
+
+```bash
+--set-env-vars CI_OBS_GITHUB_APP_ID=YOUR_GITHUB_APP_ID,CI_OBS_MAX_INGESTION_MESSAGE_AGE_SECONDS=3600,CI_OBS_OTEL_EXPORTER_OTLP_ENDPOINT=https://YOUR_COLLECTOR_SERVICE_URL/v1/traces
+```
+
+The execution telemetry pipeline remains separate:
+
+- reusable workflow callback -> webhook -> Pub/Sub -> worker -> GitHub API -> Postgres
+
+OTEL is for runtime/service telemetry, not a replacement for the normalized GitHub execution telemetry stored by the worker.
+
 Optional:
 
 - the repo also includes PowerShell helper scripts in `deploy/cloud-run/` for users who prefer them
+- the OTEL collector setup is documented separately in `docs/bootstrap-otel-gcp.md`
 
 ## 10. GitHub App setup
 

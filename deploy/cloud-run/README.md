@@ -29,6 +29,10 @@ Worker service also needs:
 - `CI_OBS_GITHUB_APP_ID`
 - `CI_OBS_GITHUB_APP_PRIVATE_KEY`
 
+If runtime tracing is enabled, point both services at a GCP-controlled OTLP collector endpoint with:
+
+- `CI_OBS_OTEL_EXPORTER_OTLP_ENDPOINT`
+
 Only runtime workloads that touch Postgres need the Cloud SQL instance attached with:
 
 - `--add-cloudsql-instances PROJECT:REGION:INSTANCE`

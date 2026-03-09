@@ -58,7 +58,6 @@ jobs:
               "repository_full_name": "${{ github.repository }}",
               "run_id": int("${{ github.run_id }}"),
               "run_attempt": int("${{ github.run_attempt }}"),
-              "installation_id": None,
               "sent_at": __import__("datetime").datetime.now(__import__("datetime").UTC).isoformat(),
           }
           body = json.dumps(payload).encode("utf-8")

@@ -7,6 +7,7 @@ from typing import Any
 
 from shared.config import Settings
 from shared.github import GitHubApiUnavailableError, GitHubClient
+from shared.otel import get_tracer, set_span_attributes, span_kind_internal
 from shared.schemas import (
     IngestionBundle,
     JobRunRecord,
@@ -18,6 +19,7 @@ from shared.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+tracer = get_tracer(__name__)
 
 
 def _parse_datetime(value: str | None) -> datetime | None:
@@ -152,42 +154,65 @@ class IngestionService:
         self.repository = repository
 
     async def ingest(self, message: WebhookIngestionMessage) -> IngestionBundle:
-        await asyncio.sleep(self.settings.initial_fetch_delay_seconds)
-        last_error: Exception | None = None
-        installation_id = message.installation_id
-        if installation_id is None:
-            installation_id = await self.github_client.installation_id_for_repo(
-                message.repository_full_name
+        with tracer.start_as_current_span(
+            "ingestion_service.ingest",
+            kind=span_kind_internal(),
+        ) as span:
+            set_span_attributes(
+                span,
+                repository=message.repository_full_name,
+                repository_id=message.repository_id,
+                github_run_id=message.run_id,
+                run_attempt=message.run_attempt,
+                delivery_id=message.delivery_id,
+                correlation_id=message.correlation_id,
             )
-        for attempt in range(1, self.settings.github_fetch_retry_attempts + 1):
-            try:
-                workflow_payload = await self.github_client.get_workflow_run(
-                    message.repository_full_name,
-                    message.run_id,
-                    installation_id,
+            await asyncio.sleep(self.settings.initial_fetch_delay_seconds)
+            last_error: Exception | None = None
+            installation_id = message.installation_id
+            if installation_id is None:
+                installation_id = await self.github_client.installation_id_for_repo(
+                    message.repository_full_name
                 )
-                jobs_pages = await self.github_client.list_jobs(
-                    message.repository_full_name,
-                    message.run_id,
-                    installation_id,
-                )
-                bundle = build_ingestion_bundle(message, workflow_payload, jobs_pages)
-                await self.repository.persist_bundle(bundle)
-                return bundle
-            except GitHubApiUnavailableError as exc:
-                last_error = exc
-                logger.warning(
-                    "github_api_unavailable",
-                    extra={
-                        "repository": message.repository_full_name,
-                        "run_id": message.run_id,
-                        "run_attempt": message.run_attempt,
-                        "retry_attempt": attempt,
-                    },
-                )
-                if attempt < self.settings.github_fetch_retry_attempts:
-                    await asyncio.sleep(self.settings.github_fetch_retry_interval_seconds)
-            except Exception as exc:
-                last_error = exc
-                break
-        raise RuntimeError("ingestion_failed_after_retries") from last_error
+            span.set_attribute("github_installation_id", installation_id)
+            for attempt in range(1, self.settings.github_fetch_retry_attempts + 1):
+                try:
+                    with tracer.start_as_current_span(
+                        "ingestion_attempt",
+                        kind=span_kind_internal(),
+                    ) as attempt_span:
+                        set_span_attributes(attempt_span, retry_attempt=attempt)
+                        workflow_payload = await self.github_client.get_workflow_run(
+                            message.repository_full_name,
+                            message.run_id,
+                            installation_id,
+                        )
+                        jobs_pages = await self.github_client.list_jobs(
+                            message.repository_full_name,
+                            message.run_id,
+                            installation_id,
+                        )
+                        bundle = build_ingestion_bundle(message, workflow_payload, jobs_pages)
+                        with tracer.start_as_current_span(
+                            "persist_bundle",
+                            kind=span_kind_internal(),
+                        ):
+                            await self.repository.persist_bundle(bundle)
+                        return bundle
+                except GitHubApiUnavailableError as exc:
+                    last_error = exc
+                    logger.warning(
+                        "github_api_unavailable",
+                        extra={
+                            "repository": message.repository_full_name,
+                            "run_id": message.run_id,
+                            "run_attempt": message.run_attempt,
+                            "retry_attempt": attempt,
+                        },
+                    )
+                    if attempt < self.settings.github_fetch_retry_attempts:
+                        await asyncio.sleep(self.settings.github_fetch_retry_interval_seconds)
+                except Exception as exc:
+                    last_error = exc
+                    break
+            raise RuntimeError("ingestion_failed_after_retries") from last_error
