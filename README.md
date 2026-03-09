@@ -8,7 +8,9 @@ This MVP intentionally persists both normalized execution telemetry and raw webh
 
 - `services/webhook_service/app.py`
   - Receives custom observability events from reusable workflows
-  - Validates the shared signature
+  - Validates the shared signature and auth token
+  - Enforces a short timestamp freshness window
+  - Rejects duplicate delivery IDs within the replay window
   - Filters to relevant completed custom events
   - Publishes an immutable ingestion message to Pub/Sub
   - Does not call the GitHub API
@@ -54,6 +56,7 @@ Raw payload storage:
 Copy `.env.example` to `.env` and set:
 
 - callback shared secret
+- callback auth token
 - GitHub App credentials
 - Postgres connection string
 
@@ -62,7 +65,9 @@ Security-sensitive notes:
 - Do not rely on default development credentials in deployed environments.
 - Persisted raw payloads should be protected by database access controls and a retention policy.
 - Callback deliveries should be monitored for replay and delivery anomalies.
+- Public webhook ingress should be protected with an edge control such as Cloud Armor in addition to app-layer authentication.
 - Request body sizes are logged and enforced by configurable ingress limits.
+- The current replay cache is in-memory per service instance. Use a shared TTL-backed store before treating replay protection as multi-instance production-grade.
 
 ## Run
 

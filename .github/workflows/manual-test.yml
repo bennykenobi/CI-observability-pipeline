@@ -34,10 +34,11 @@ jobs:
         env:
           CI_OBS_CALLBACK_URL: ${{ secrets.CI_OBS_CALLBACK_URL }}
           CI_OBS_CALLBACK_SECRET: ${{ secrets.CI_OBS_CALLBACK_SECRET }}
+          CI_OBS_CALLBACK_AUTH_TOKEN: ${{ secrets.CI_OBS_CALLBACK_AUTH_TOKEN }}
           DELIVERY_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         shell: bash
         run: |
-          if [ -z "$CI_OBS_CALLBACK_URL" ] || [ -z "$CI_OBS_CALLBACK_SECRET" ]; then
+          if [ -z "$CI_OBS_CALLBACK_URL" ] || [ -z "$CI_OBS_CALLBACK_SECRET" ] || [ -z "$CI_OBS_CALLBACK_AUTH_TOKEN" ]; then
             echo "Callback secrets not configured, skipping callback step"
             exit 0
           fi
@@ -58,6 +59,7 @@ jobs:
               "run_id": int("${{ github.run_id }}"),
               "run_attempt": int("${{ github.run_attempt }}"),
               "installation_id": None,
+              "sent_at": __import__("datetime").datetime.now(__import__("datetime").UTC).isoformat(),
           }
           body = json.dumps(payload).encode("utf-8")
           digest = hmac.new(
@@ -71,6 +73,7 @@ jobs:
               headers={
                   "Content-Type": "application/json",
                   "X-Observability-Signature-256": f"sha256={digest}",
+                  "X-Observability-Token": os.environ["CI_OBS_CALLBACK_AUTH_TOKEN"],
               },
               method="POST",
           )

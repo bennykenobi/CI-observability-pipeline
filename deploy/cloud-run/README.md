@@ -20,6 +20,7 @@ Both services need:
 Webhook service also needs:
 
 - `CI_OBS_WEBHOOK_SECRET`
+- `CI_OBS_WEBHOOK_AUTH_TOKEN`
 - `CI_OBS_PUBSUB_TOPIC`
 
 Worker service also needs:
@@ -46,3 +47,5 @@ Recommended deployment order:
 3. execute the migration job successfully
 4. deploy webhook
 5. deploy worker
+
+Use dedicated service accounts for webhook and worker in deployed environments. Do not rely on the default compute service account.

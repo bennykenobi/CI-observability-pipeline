@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import pytest
 
 from shared.github import GitHubApiUnavailableError
@@ -14,6 +16,7 @@ def test_build_ingestion_bundle_captures_reusable_workflow_and_steps():
         run_id=101,
         run_attempt=1,
         installation_id=999,
+        sent_at=datetime.now(UTC),
     )
     workflow_payload = {
         "workflow_id": 55,
@@ -137,6 +140,7 @@ async def test_ingestion_service_retries_then_persists(monkeypatch):
         repository_full_name="org/repo",
         run_id=11,
         run_attempt=1,
+        sent_at=datetime.now(UTC),
     )
 
     bundle = await service.ingest(message)
@@ -175,6 +179,7 @@ async def test_ingestion_service_raises_after_retry_exhaustion(monkeypatch):
         repository_full_name="org/repo",
         run_id=11,
         run_attempt=1,
+        sent_at=datetime.now(UTC),
     )
 
     with pytest.raises(RuntimeError, match="ingestion_failed_after_retries"):

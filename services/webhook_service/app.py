@@ -4,6 +4,8 @@ import hashlib
 import hmac
 import json
 import logging
+from datetime import UTC, datetime, timedelta
+from threading import Lock
 
 from fastapi import FastAPI, Header, HTTPException, Request, Response, status
 from pydantic import ValidationError
@@ -16,6 +18,23 @@ from shared.schemas import WebhookIngestionMessage
 logger = logging.getLogger(__name__)
 
 
+class InMemoryReplayStore:
+    def __init__(self):
+        self._entries: dict[str, datetime] = {}
+        self._lock = Lock()
+
+    def register(self, delivery_id: str, expires_at: datetime) -> bool:
+        now = datetime.now(UTC)
+        with self._lock:
+            expired = [key for key, value in self._entries.items() if value <= now]
+            for key in expired:
+                del self._entries[key]
+            if delivery_id in self._entries:
+                return False
+            self._entries[delivery_id] = expires_at
+            return True
+
+
 def _signature(secret: str, body: bytes) -> str:
     digest = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
     return f"sha256={digest}"
@@ -24,12 +43,14 @@ def _signature(secret: str, body: bytes) -> str:
 def create_app(
     settings: Settings | None = None,
     publisher: Publisher | None = None,
+    replay_store: InMemoryReplayStore | None = None,
 ) -> FastAPI:
     configure_logging()
     app_settings = settings or get_settings()
     app = FastAPI(title="CI Observability Webhook Service")
     app.state.publisher = publisher
     app.state.settings = app_settings
+    app.state.replay_store = replay_store or InMemoryReplayStore()
 
     @app.get("/healthz", status_code=status.HTTP_200_OK)
     async def healthz() -> dict[str, str]:
@@ -40,6 +61,7 @@ def create_app(
         request: Request,
         response: Response,
         x_observability_signature_256: str = Header(default=""),
+        x_observability_token: str = Header(default=""),
     ) -> dict[str, str]:
         body = await request.body()
         logger.info(
@@ -59,6 +81,14 @@ def create_app(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid signature",
             )
+        if not hmac.compare_digest(
+            app_settings.webhook_auth_token,
+            x_observability_token,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token",
+            )
 
         try:
             message = WebhookIngestionMessage.model_validate(json.loads(body))
@@ -67,6 +97,25 @@ def create_app(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Invalid observability event payload",
             ) from exc
+        now = datetime.now(UTC)
+        if message.sent_at > now + timedelta(seconds=app_settings.webhook_future_skew_seconds):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Event timestamp is too far in the future",
+            )
+        if now - message.sent_at > timedelta(seconds=app_settings.webhook_max_age_seconds):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Event timestamp is outside the allowed window",
+            )
+        if not app.state.replay_store.register(
+            message.delivery_id,
+            message.sent_at + timedelta(seconds=app_settings.webhook_max_age_seconds),
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Duplicate delivery",
+            )
         if message.event_type != "workflow_run_completed":
             response.status_code = status.HTTP_200_OK
             return {"status": "ignored"}

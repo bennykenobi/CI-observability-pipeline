@@ -43,6 +43,8 @@ Webhook URL and webhook secret:
   - enable SSL verification
   - disable app webhook delivery later if you are not using GitHub App webhooks
 
+The separate `ci-obs-webhook-auth-token` used by the runtime callback listener is not a GitHub App setting. It is only for the custom callback sent by the reusable workflow.
+
 OAuth callback URL:
 
 - not used by this project

@@ -2,10 +2,11 @@ import hashlib
 import hmac
 import json
 from concurrent.futures import Future
+from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 
-from services.webhook_service.app import create_app
+from services.webhook_service.app import InMemoryReplayStore, create_app
 from shared.config import Settings
 from shared.pubsub import GooglePubSubPublisher, resolve_topic_path
 
@@ -24,7 +25,7 @@ def _signature(secret: str, body: bytes) -> str:
 
 def test_completed_custom_event_is_published():
     publisher = RecordingPublisher()
-    settings = Settings(webhook_secret="secret")
+    settings = Settings(webhook_secret="secret", webhook_auth_token="token")
     client = TestClient(create_app(settings=settings, publisher=publisher))
     payload = {
         "event_type": "workflow_run_completed",
@@ -35,6 +36,7 @@ def test_completed_custom_event_is_published():
         "run_id": 99,
         "run_attempt": 2,
         "installation_id": 777,
+        "sent_at": datetime.now(UTC).isoformat(),
     }
     body = json.dumps(payload).encode("utf-8")
 
@@ -43,6 +45,7 @@ def test_completed_custom_event_is_published():
         content=body,
         headers={
             "X-Observability-Signature-256": _signature("secret", body),
+            "X-Observability-Token": "token",
         },
     )
 
@@ -55,7 +58,7 @@ def test_completed_custom_event_is_published():
 
 def test_non_completed_event_is_ignored():
     publisher = RecordingPublisher()
-    settings = Settings(webhook_secret="secret")
+    settings = Settings(webhook_secret="secret", webhook_auth_token="token")
     client = TestClient(create_app(settings=settings, publisher=publisher))
     payload = {
         "event_type": "workflow_run_completed",
@@ -65,6 +68,7 @@ def test_non_completed_event_is_ignored():
         "repository_full_name": "org/repo",
         "run_id": 99,
         "run_attempt": 1,
+        "sent_at": datetime.now(UTC).isoformat(),
     }
     body = json.dumps(payload).encode("utf-8")
 
@@ -73,6 +77,7 @@ def test_non_completed_event_is_ignored():
         content=body,
         headers={
             "X-Observability-Signature-256": _signature("secret", body),
+            "X-Observability-Token": "token",
         },
     )
 
@@ -82,7 +87,7 @@ def test_non_completed_event_is_ignored():
 
 def test_unsupported_custom_event_is_ignored():
     publisher = RecordingPublisher()
-    settings = Settings(webhook_secret="secret")
+    settings = Settings(webhook_secret="secret", webhook_auth_token="token")
     client = TestClient(create_app(settings=settings, publisher=publisher))
     payload = {
         "event_type": "not_supported",
@@ -92,6 +97,7 @@ def test_unsupported_custom_event_is_ignored():
         "repository_full_name": "org/repo",
         "run_id": 99,
         "run_attempt": 1,
+        "sent_at": datetime.now(UTC).isoformat(),
     }
     body = json.dumps(payload).encode("utf-8")
 
@@ -100,6 +106,7 @@ def test_unsupported_custom_event_is_ignored():
         content=body,
         headers={
             "X-Observability-Signature-256": _signature("secret", body),
+            "X-Observability-Token": "token",
         },
     )
 
@@ -112,6 +119,7 @@ def test_webhook_payload_limit_rejects_large_body():
     publisher = RecordingPublisher()
     settings = Settings(
         webhook_secret="secret",
+        webhook_auth_token="token",
         max_webhook_body_bytes=8,
     )
     client = TestClient(create_app(settings=settings, publisher=publisher))
@@ -122,6 +130,7 @@ def test_webhook_payload_limit_rejects_large_body():
         content=body,
         headers={
             "X-Observability-Signature-256": _signature("secret", body),
+            "X-Observability-Token": "token",
         },
     )
 
@@ -130,9 +139,37 @@ def test_webhook_payload_limit_rejects_large_body():
 
 def test_custom_event_requires_expected_fields():
     publisher = RecordingPublisher()
-    settings = Settings(webhook_secret="secret")
+    settings = Settings(webhook_secret="secret", webhook_auth_token="token")
     client = TestClient(create_app(settings=settings, publisher=publisher))
     body = json.dumps({"action": "completed", "delivery_id": "delivery-1"}).encode("utf-8")
+
+    response = client.post(
+        "/workflow/callback",
+        content=body,
+        headers={
+            "X-Observability-Signature-256": _signature("secret", body),
+            "X-Observability-Token": "token",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_custom_event_requires_authentication_token():
+    publisher = RecordingPublisher()
+    settings = Settings(webhook_secret="secret", webhook_auth_token="token")
+    client = TestClient(create_app(settings=settings, publisher=publisher))
+    payload = {
+        "event_type": "workflow_run_completed",
+        "action": "completed",
+        "delivery_id": "delivery-1",
+        "repository_id": 1,
+        "repository_full_name": "org/repo",
+        "run_id": 99,
+        "run_attempt": 1,
+        "sent_at": datetime.now(UTC).isoformat(),
+    }
+    body = json.dumps(payload).encode("utf-8")
 
     response = client.post(
         "/workflow/callback",
@@ -142,7 +179,69 @@ def test_custom_event_requires_expected_fields():
         },
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 401
+
+
+def test_stale_custom_event_is_rejected():
+    publisher = RecordingPublisher()
+    settings = Settings(
+        webhook_secret="secret",
+        webhook_auth_token="token",
+        webhook_max_age_seconds=60,
+    )
+    client = TestClient(create_app(settings=settings, publisher=publisher))
+    payload = {
+        "event_type": "workflow_run_completed",
+        "action": "completed",
+        "delivery_id": "delivery-stale",
+        "repository_id": 1,
+        "repository_full_name": "org/repo",
+        "run_id": 99,
+        "run_attempt": 1,
+        "sent_at": (datetime.now(UTC) - timedelta(minutes=10)).isoformat(),
+    }
+    body = json.dumps(payload).encode("utf-8")
+
+    response = client.post(
+        "/workflow/callback",
+        content=body,
+        headers={
+            "X-Observability-Signature-256": _signature("secret", body),
+            "X-Observability-Token": "token",
+        },
+    )
+
+    assert response.status_code == 401
+
+
+def test_duplicate_delivery_id_is_rejected():
+    publisher = RecordingPublisher()
+    settings = Settings(webhook_secret="secret", webhook_auth_token="token")
+    replay_store = InMemoryReplayStore()
+    client = TestClient(
+        create_app(settings=settings, publisher=publisher, replay_store=replay_store)
+    )
+    payload = {
+        "event_type": "workflow_run_completed",
+        "action": "completed",
+        "delivery_id": "delivery-dup",
+        "repository_id": 1,
+        "repository_full_name": "org/repo",
+        "run_id": 99,
+        "run_attempt": 1,
+        "sent_at": datetime.now(UTC).isoformat(),
+    }
+    body = json.dumps(payload).encode("utf-8")
+    headers = {
+        "X-Observability-Signature-256": _signature("secret", body),
+        "X-Observability-Token": "token",
+    }
+
+    first = client.post("/workflow/callback", content=body, headers=headers)
+    second = client.post("/workflow/callback", content=body, headers=headers)
+
+    assert first.status_code == 202
+    assert second.status_code == 409
 
 
 def test_topic_path_resolution_supports_short_and_fully_qualified_names():

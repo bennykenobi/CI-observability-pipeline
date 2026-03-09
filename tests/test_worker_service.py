@@ -1,5 +1,6 @@
 import base64
 import json
+from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
@@ -30,6 +31,7 @@ def test_worker_decodes_pubsub_message_and_invokes_ingestion():
         run_id=11,
         run_attempt=1,
         installation_id=99,
+        sent_at=datetime.now(UTC),
     ).model_dump(mode="json")
 
     response = client.post(
@@ -81,6 +83,7 @@ def test_worker_returns_500_when_ingestion_fails():
         run_id=11,
         run_attempt=1,
         installation_id=99,
+        sent_at=datetime.now(UTC),
     ).model_dump(mode="json")
 
     response = client.post(

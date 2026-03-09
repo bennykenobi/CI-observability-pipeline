@@ -19,7 +19,7 @@ class WebhookIngestionMessage(BaseModel):
     run_id: int
     run_attempt: int
     installation_id: int | None = None
-    sent_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    sent_at: datetime
 
 
 class PubSubMessageEnvelope(BaseModel):
