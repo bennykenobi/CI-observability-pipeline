@@ -45,7 +45,26 @@ class GitHubClient:
         self.settings = settings
         self.auth = GitHubAppAuth(settings)
         self.http_client = http_client or httpx.AsyncClient(timeout=30.0)
+        self._installation_cache: dict[str, int] = {}
         self._token_cache: dict[int, str] = {}
+
+    async def installation_id_for_repo(self, repository_full_name: str) -> int:
+        installation_id = self._installation_cache.get(repository_full_name)
+        if installation_id is not None:
+            return installation_id
+        response = await self.http_client.get(
+            f"{self.settings.github_api_url}/repos/{repository_full_name}/installation",
+            headers={
+                "Authorization": f"Bearer {self.auth.build_jwt()}",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+        if response.status_code >= 500:
+            raise GitHubApiUnavailableError(response.text)
+        response.raise_for_status()
+        installation_id = response.json()["id"]
+        self._installation_cache[repository_full_name] = installation_id
+        return installation_id
 
     async def _headers(self, installation_id: int) -> dict[str, str]:
         token = self._token_cache.get(installation_id)

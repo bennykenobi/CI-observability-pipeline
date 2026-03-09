@@ -69,8 +69,13 @@ def test_build_ingestion_bundle_captures_reusable_workflow_and_steps():
 class RetryGitHubClient:
     def __init__(self, failures_before_success=0):
         self.failures_before_success = failures_before_success
+        self.installation_lookup_calls = 0
         self.workflow_calls = 0
         self.jobs_calls = 0
+
+    async def installation_id_for_repo(self, repository_full_name):
+        self.installation_lookup_calls += 1
+        return 99
 
     async def get_workflow_run(self, repository_full_name, run_id, installation_id):
         self.workflow_calls += 1
@@ -132,11 +137,11 @@ async def test_ingestion_service_retries_then_persists(monkeypatch):
         repository_full_name="org/repo",
         run_id=11,
         run_attempt=1,
-        installation_id=99,
     )
 
     bundle = await service.ingest(message)
 
+    assert client.installation_lookup_calls == 1
     assert client.workflow_calls == 3
     assert client.jobs_calls == 1
     assert repository.bundles[0] == bundle
@@ -170,7 +175,6 @@ async def test_ingestion_service_raises_after_retry_exhaustion(monkeypatch):
         repository_full_name="org/repo",
         run_id=11,
         run_attempt=1,
-        installation_id=99,
     )
 
     with pytest.raises(RuntimeError, match="ingestion_failed_after_retries"):

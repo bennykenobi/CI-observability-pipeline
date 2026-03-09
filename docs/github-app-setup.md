@@ -36,13 +36,12 @@ Recommended homepage URL:
 
 Webhook URL and webhook secret:
 
-- for the current MVP architecture, the GitHub App is used for API authentication, not as the primary event delivery mechanism
-- the monitored event is a custom callback emitted by the central reusable workflow
-- if GitHub requires these fields during app creation:
-  - use a valid HTTPS URL you control, such as the repository URL
-  - use the same random shared secret you store as `ci-obs-webhook-secret`
-  - enable SSL verification
-  - disable app webhook delivery later if your org does not plan to use GitHub App webhooks
+- the platform ingests native GitHub `workflow_run` webhooks
+- if you are using the GitHub App as the webhook delivery source, point it at:
+  - `https://YOUR_WEBHOOK_SERVICE_URL/github/webhook`
+- use the same secret you store as `ci-obs-webhook-secret`
+- enable SSL verification
+- if your organization uses repository-level or org-managed webhooks instead of GitHub App webhook delivery, you may use a temporary valid HTTPS URL during app creation and configure the actual webhook separately afterward
 
 OAuth callback URL:
 
@@ -64,7 +63,11 @@ Do not grant write permissions unless a future feature explicitly needs them.
 
 ## 3. Subscribe to events
 
-For the current MVP, app webhook subscription is not the primary event path. Keep the app permissions correct because the worker relies on app authentication for API calls.
+Subscribe to:
+
+- `workflow_run`
+
+The worker still relies on GitHub App authentication for API calls even when webhook delivery is configured outside the app.
 
 ## 4. Create the app and capture identifiers
 
@@ -119,8 +122,6 @@ After GitHub App setup, you should have:
 - `ci-obs-github-app-private-key`
 
 The worker service needs both.
-
-The webhook service does not rely on native GitHub App webhook delivery in the current architecture.
 
 The GitHub App client secret is not needed for the current architecture.
 

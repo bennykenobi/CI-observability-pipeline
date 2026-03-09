@@ -5,8 +5,7 @@ param(
     [Parameter(Mandatory = $true)] [string] $CloudSqlInstanceConnectionName,
     [Parameter(Mandatory = $true)] [string] $GithubAppId,
     [Parameter(Mandatory = $true)] [string] $GithubPrivateKeySecretName,
-    [Parameter(Mandatory = $true)] [string] $DatabaseUrlSecretName,
-    [Parameter(Mandatory = $true)] [string] $RepositoryAllowlist
+    [Parameter(Mandatory = $true)] [string] $DatabaseUrlSecretName
 )
 
 gcloud run deploy ci-observability-worker `
@@ -16,5 +15,5 @@ gcloud run deploy ci-observability-worker `
   --platform managed `
   --no-allow-unauthenticated `
   --add-cloudsql-instances $CloudSqlInstanceConnectionName `
-  --set-env-vars "CI_OBS_GITHUB_APP_ID=$GithubAppId,CI_OBS_REPOSITORY_ALLOWLIST=$RepositoryAllowlist" `
+  --set-env-vars "CI_OBS_GITHUB_APP_ID=$GithubAppId" `
   --set-secrets "CI_OBS_GITHUB_APP_PRIVATE_KEY=$GithubPrivateKeySecretName:latest,CI_OBS_DATABASE_URL=$DatabaseUrlSecretName:latest"

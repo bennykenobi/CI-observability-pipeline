@@ -11,7 +11,7 @@ Confirm the local stack can:
 - start both services
 - pass the existing automated tests
 
-This is not a full end-to-end custom callback simulation. It is a local readiness check.
+This is not a full end-to-end GitHub webhook simulation. It is a local readiness check.
 
 ## Prerequisites
 
@@ -31,7 +31,6 @@ CI_OBS_DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/ci_obs
 CI_OBS_WEBHOOK_SECRET=local-test-secret
 CI_OBS_GCP_PROJECT_ID=local-dev-project
 CI_OBS_PUBSUB_TOPIC=ci-observability-ingestion
-CI_OBS_REPOSITORY_ALLOWLIST=["your-org/your-repo"]
 ```
 
 Do not use production credentials locally.
@@ -114,7 +113,7 @@ This smoke test proves:
 
 It does not prove:
 
-- real reusable-workflow callback delivery
+- real GitHub `workflow_run` webhook delivery
 - real Pub/Sub publication
 - real GitHub App authentication
 - Cloud Run / Pub/Sub IAM setup

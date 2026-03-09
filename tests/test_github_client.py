@@ -49,6 +49,35 @@ async def _resolved_token(token: str) -> str:
 
 
 @pytest.mark.asyncio
+async def test_github_client_discovers_and_caches_installation_id():
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, str(request.url)))
+        if request.url.path == "/repos/org/repo/installation":
+            return httpx.Response(200, json={"id": 99})
+        raise AssertionError(f"unexpected request: {request.url}")
+
+    settings = Settings(
+        github_api_url="https://api.github.test",
+        github_app_id="123",
+        github_app_private_key="dummy",
+    )
+    client = GitHubClient(
+        settings=settings,
+        http_client=httpx.AsyncClient(transport=make_transport(handler)),
+    )
+    client.auth.build_jwt = lambda: "jwt"
+
+    first = await client.installation_id_for_repo("org/repo")
+    second = await client.installation_id_for_repo("org/repo")
+
+    assert first == 99
+    assert second == 99
+    assert calls == [("GET", "https://api.github.test/repos/org/repo/installation")]
+
+
+@pytest.mark.asyncio
 async def test_github_client_paginates_jobs():
     pages = []
 

@@ -25,7 +25,7 @@ Recommended order:
 5. build and push images
 6. create or update the migration job and run it
 7. deploy services
-8. configure the reusable workflow callback
+8. configure GitHub webhook delivery
 
 ## 1. Set project context
 
@@ -127,8 +127,7 @@ gcloud secrets create ci-obs-database-url --replication-policy=automatic
 
 Note:
 
-- `ci-obs-webhook-secret` is now the shared callback secret used between the central reusable workflow and the webhook service.
-- It is no longer intended as a native GitHub webhook secret for this MVP architecture.
+- `ci-obs-webhook-secret` is the GitHub webhook signing secret shared between GitHub and the webhook service.
 - `ci-obs-database-url` is the full SQLAlchemy connection string, not a randomly generated secret.
 
 Add values in the GCP GUI or from local files. Do not place secret values in repo files.
@@ -179,9 +178,10 @@ gcloud run jobs deploy ci-observability-migrate \
   --region YOUR_REGION \
   --image YOUR_REGION-docker.pkg.dev/YOUR_PROJECT_ID/ci-observability/webhook:latest \
   --command alembic \
-  --args upgrade,head \
+  --args upgrade \
+  --args head \
   --set-secrets CI_OBS_DATABASE_URL=ci-obs-database-url:latest \
-  --add-cloudsql-instances PROJECT:REGION:INSTANCE
+  --set-cloudsql-instances PROJECT:REGION:INSTANCE
 ```
 
 Run the job before deploying service revisions that depend on schema changes:
@@ -199,7 +199,7 @@ The job should complete successfully before webhook or worker deployments are ro
 
 Before deployment, ensure:
 
-- the webhook service is public only if you are ready to receive custom callback traffic from the reusable workflow layer
+- the webhook service is public only if you are ready to receive GitHub webhook traffic
 - the worker service is private
 - both services use service accounts with least privilege
 - secret access is granted only to the relevant service account
@@ -218,7 +218,7 @@ gcloud run deploy ci-observability-webhook \
   --platform managed \
   --allow-unauthenticated \
   --add-cloudsql-instances PROJECT:REGION:INSTANCE \
-  --set-env-vars CI_OBS_PUBSUB_TOPIC=ci-observability-ingestion,CI_OBS_REPOSITORY_ALLOWLIST='["your-org/your-repo"]' \
+  --set-env-vars CI_OBS_PUBSUB_TOPIC=ci-observability-ingestion \
   --set-secrets CI_OBS_WEBHOOK_SECRET=ci-obs-webhook-secret:latest,CI_OBS_DATABASE_URL=ci-obs-database-url:latest
 ```
 
@@ -232,7 +232,7 @@ gcloud run deploy ci-observability-worker \
   --platform managed \
   --no-allow-unauthenticated \
   --add-cloudsql-instances PROJECT:REGION:INSTANCE \
-  --set-env-vars CI_OBS_GITHUB_APP_ID=YOUR_GITHUB_APP_ID,CI_OBS_REPOSITORY_ALLOWLIST='["your-org/your-repo"]' \
+  --set-env-vars CI_OBS_GITHUB_APP_ID=YOUR_GITHUB_APP_ID \
   --set-secrets CI_OBS_GITHUB_APP_PRIVATE_KEY=ci-obs-github-app-private-key:latest,CI_OBS_DATABASE_URL=ci-obs-database-url:latest
 ```
 
@@ -266,17 +266,48 @@ gcloud pubsub subscriptions create ci-observability-worker-push \
 
 Also configure authenticated push and Cloud Run invoker permissions so only Pub/Sub can call the worker.
 
-## 12. Webhook setup
+At minimum, configure:
 
-Configure the central reusable workflow callback target to point at:
-
-```text
-https://WEBHOOK_URL/workflow/callback
+```bash
+gcloud pubsub subscriptions update ci-observability-worker-push \
+  --project YOUR_PROJECT_ID \
+  --push-endpoint=https://WORKER_URL/pubsub/ingest \
+  --push-auth-service-account=WORKLOAD_SERVICE_ACCOUNT \
+  --push-auth-token-audience=https://WORKER_URL
 ```
 
-Use the same shared secret value stored in `ci-obs-webhook-secret` when generating the callback signature from the reusable workflow.
+Grant the push auth service account `roles/run.invoker` on the worker service:
 
-The callback payload should match the application contract implemented by `WebhookIngestionMessage`.
+```bash
+gcloud run services add-iam-policy-binding ci-observability-worker \
+  --project YOUR_PROJECT_ID \
+  --region YOUR_REGION \
+  --member=serviceAccount:WORKLOAD_SERVICE_ACCOUNT \
+  --role=roles/run.invoker
+```
+
+Grant the Pub/Sub service agent permission to mint the OIDC token:
+
+```bash
+gcloud iam service-accounts add-iam-policy-binding WORKLOAD_SERVICE_ACCOUNT \
+  --project YOUR_PROJECT_ID \
+  --member=serviceAccount:service-PROJECT_NUMBER@gcp-sa-pubsub.iam.gserviceaccount.com \
+  --role=roles/iam.serviceAccountTokenCreator
+```
+
+## 12. Webhook setup
+
+Configure GitHub webhook delivery to point at:
+
+```text
+https://WEBHOOK_URL/github/webhook
+```
+
+Use the same secret value stored in `ci-obs-webhook-secret` in the GitHub webhook configuration.
+
+Enable the `workflow_run` event and allow the listener to trigger fetch when it receives `action=completed`.
+
+If you are using GitHub App webhook delivery, configure that in the app settings. If you are using organization-level or repository-level webhooks instead, point those webhooks at the same URL and secret.
 
 ## 13. First end-to-end test
 
@@ -286,11 +317,11 @@ Use the repo workflow:
 
 Then verify:
 
-- callback service receives and accepts the delivery
+- webhook service receives and accepts the delivery
 - Pub/Sub message is published
 - worker receives the push request
 - rows appear in Postgres
-- duplicate delivery handling behaves correctly
+- workflow/job/step rows are persisted as expected
 
 ## Security notes
 

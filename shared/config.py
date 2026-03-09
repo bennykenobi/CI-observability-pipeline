@@ -5,12 +5,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="CI_OBS_")
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="CI_OBS_", extra="ignore")
 
     environment: str = "development"
     database_url: str = "sqlite+pysqlite:///:memory:"
     webhook_secret: str = Field(default="", repr=False)
-    repository_allowlist: list[str] = Field(default_factory=list)
     gcp_project_id: str | None = None
     pubsub_topic: str = "ci-observability-ingestion"
     github_api_url: str = "https://api.github.com"

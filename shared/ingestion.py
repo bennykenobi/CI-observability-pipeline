@@ -154,17 +154,22 @@ class IngestionService:
     async def ingest(self, message: WebhookIngestionMessage) -> IngestionBundle:
         await asyncio.sleep(self.settings.initial_fetch_delay_seconds)
         last_error: Exception | None = None
+        installation_id = message.installation_id
+        if installation_id is None:
+            installation_id = await self.github_client.installation_id_for_repo(
+                message.repository_full_name
+            )
         for attempt in range(1, self.settings.github_fetch_retry_attempts + 1):
             try:
                 workflow_payload = await self.github_client.get_workflow_run(
                     message.repository_full_name,
                     message.run_id,
-                    message.installation_id or 0,
+                    installation_id,
                 )
                 jobs_pages = await self.github_client.list_jobs(
                     message.repository_full_name,
                     message.run_id,
-                    message.installation_id or 0,
+                    installation_id,
                 )
                 bundle = build_ingestion_bundle(message, workflow_payload, jobs_pages)
                 await self.repository.persist_bundle(bundle)

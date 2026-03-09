@@ -7,14 +7,14 @@ This MVP intentionally persists both normalized execution telemetry and raw webh
 ## Services
 
 - `services/webhook_service/app.py`
-  - Receives custom workflow callback events from the central reusable workflow
-  - Validates the shared HMAC signature
-  - Filters to allowlisted repositories
-  - Persists the raw callback payload
-  - Publishes an immutable ingestion message
+  - Receives GitHub `workflow_run` webhooks
+  - Validates the GitHub signature
+  - Filters to relevant completed workflow-run events
+  - Publishes an immutable ingestion message to Pub/Sub
 
 - `services/ingestion_worker/app.py`
   - Receives Pub/Sub push messages
+  - Waits for GitHub API consistency and retries transient failures
   - Fetches workflow run and paginated jobs data from GitHub
   - Persists normalized workflow/job/step records
   - Persists raw GitHub API payloads
@@ -51,16 +51,15 @@ Raw payload storage:
 
 Copy `.env.example` to `.env` and set:
 
-- callback shared secret
+- GitHub webhook secret
 - GitHub App credentials
-- repository allowlist
 - Postgres connection string
 
 Security-sensitive notes:
 
 - Do not rely on default development credentials in deployed environments.
 - Persisted raw payloads should be protected by database access controls and a retention policy.
-- Callback deliveries are deduplicated by delivery ID to reduce replay risk.
+- Webhook deliveries should be monitored for replay and delivery anomalies.
 - Request body sizes are logged and enforced by configurable ingress limits.
 
 ## Run
@@ -119,7 +118,7 @@ python -m ruff check .
 ## GitHub Workflows
 
 - `.github/workflows/ci.yml` runs tests on pushes and pull requests.
-- `.github/workflows/manual-test.yml` is a small manually triggered workflow that can send a signed callback to the webhook service when `CI_OBS_CALLBACK_URL` and `CI_OBS_CALLBACK_SECRET` are configured as GitHub Actions secrets.
+- `.github/workflows/manual-test.yml` is a small manually triggered workflow that generates a real workflow run, which can be observed through the configured GitHub webhook path.
 
 ## Deployment
 
