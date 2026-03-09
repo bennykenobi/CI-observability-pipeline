@@ -36,12 +36,12 @@ Recommended homepage URL:
 
 Webhook URL and webhook secret:
 
-- the platform ingests native GitHub `workflow_run` webhooks
-- if you are using the GitHub App as the webhook delivery source, point it at:
-  - `https://YOUR_WEBHOOK_SERVICE_URL/github/webhook`
-- use the same secret you store as `ci-obs-webhook-secret`
-- enable SSL verification
-- if your organization uses repository-level or org-managed webhooks instead of GitHub App webhook delivery, you may use a temporary valid HTTPS URL during app creation and configure the actual webhook separately afterward
+- the GitHub App is used for API authentication, not as the primary ingress path
+- if GitHub requires these fields during app creation:
+  - use a valid HTTPS URL you control, such as the repository URL
+  - use the same secret you store as `ci-obs-webhook-secret`
+  - enable SSL verification
+  - disable app webhook delivery later if you are not using GitHub App webhooks
 
 OAuth callback URL:
 
@@ -63,11 +63,7 @@ Do not grant write permissions unless a future feature explicitly needs them.
 
 ## 3. Subscribe to events
 
-Subscribe to:
-
-- `workflow_run`
-
-The worker still relies on GitHub App authentication for API calls even when webhook delivery is configured outside the app.
+For the current architecture, app webhook subscription is not the primary ingress path. The reusable workflow emits the observability event, and the worker relies on the app only for GitHub API authentication.
 
 ## 4. Create the app and capture identifiers
 

@@ -7,10 +7,12 @@ This MVP intentionally persists both normalized execution telemetry and raw webh
 ## Services
 
 - `services/webhook_service/app.py`
-  - Receives GitHub `workflow_run` webhooks
-  - Validates the GitHub signature
-  - Filters to relevant completed workflow-run events
+  - Receives custom observability events from reusable workflows
+  - Validates the shared signature
+  - Filters to relevant completed custom events
   - Publishes an immutable ingestion message to Pub/Sub
+  - Does not call the GitHub API
+  - Does not access Postgres
 
 - `services/ingestion_worker/app.py`
   - Receives Pub/Sub push messages
@@ -51,7 +53,7 @@ Raw payload storage:
 
 Copy `.env.example` to `.env` and set:
 
-- GitHub webhook secret
+- callback shared secret
 - GitHub App credentials
 - Postgres connection string
 
@@ -59,7 +61,7 @@ Security-sensitive notes:
 
 - Do not rely on default development credentials in deployed environments.
 - Persisted raw payloads should be protected by database access controls and a retention policy.
-- Webhook deliveries should be monitored for replay and delivery anomalies.
+- Callback deliveries should be monitored for replay and delivery anomalies.
 - Request body sizes are logged and enforced by configurable ingress limits.
 
 ## Run
@@ -118,7 +120,7 @@ python -m ruff check .
 ## GitHub Workflows
 
 - `.github/workflows/ci.yml` runs tests on pushes and pull requests.
-- `.github/workflows/manual-test.yml` is a small manually triggered workflow that generates a real workflow run, which can be observed through the configured GitHub webhook path.
+- `.github/workflows/manual-test.yml` is a small manually triggered workflow that sends a signed custom observability event to the webhook service so the Pub/Sub -> worker path can be exercised.
 
 ## Deployment
 

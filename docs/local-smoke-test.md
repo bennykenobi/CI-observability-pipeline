@@ -11,7 +11,7 @@ Confirm the local stack can:
 - start both services
 - pass the existing automated tests
 
-This is not a full end-to-end GitHub webhook simulation. It is a local readiness check.
+This is not a full end-to-end reusable-workflow callback simulation. It is a local readiness check.
 
 ## Prerequisites
 
@@ -113,7 +113,7 @@ This smoke test proves:
 
 It does not prove:
 
-- real GitHub `workflow_run` webhook delivery
+- real reusable-workflow callback delivery
 - real Pub/Sub publication
 - real GitHub App authentication
 - Cloud Run / Pub/Sub IAM setup

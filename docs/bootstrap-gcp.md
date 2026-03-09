@@ -25,7 +25,7 @@ Recommended order:
 5. build and push images
 6. create or update the migration job and run it
 7. deploy services
-8. configure GitHub webhook delivery
+8. configure reusable workflow callback delivery
 
 ## 1. Set project context
 
@@ -127,7 +127,7 @@ gcloud secrets create ci-obs-database-url --replication-policy=automatic
 
 Note:
 
-- `ci-obs-webhook-secret` is the GitHub webhook signing secret shared between GitHub and the webhook service.
+- `ci-obs-webhook-secret` is the shared callback signing secret used between reusable workflows and the webhook service.
 - `ci-obs-database-url` is the full SQLAlchemy connection string, not a randomly generated secret.
 
 Add values in the GCP GUI or from local files. Do not place secret values in repo files.
@@ -199,7 +199,7 @@ The job should complete successfully before webhook or worker deployments are ro
 
 Before deployment, ensure:
 
-- the webhook service is public only if you are ready to receive GitHub webhook traffic
+- the webhook service is public only if you are ready to receive custom callback traffic
 - the worker service is private
 - both services use service accounts with least privilege
 - secret access is granted only to the relevant service account
@@ -297,17 +297,22 @@ gcloud iam service-accounts add-iam-policy-binding WORKLOAD_SERVICE_ACCOUNT \
 
 ## 12. Webhook setup
 
-Configure GitHub webhook delivery to point at:
+Configure the reusable workflow callback target to point at:
 
 ```text
-https://WEBHOOK_URL/github/webhook
+https://WEBHOOK_URL/workflow/callback
 ```
 
-Use the same secret value stored in `ci-obs-webhook-secret` in the GitHub webhook configuration.
+Use the same secret value stored in `ci-obs-webhook-secret` when signing the callback payload from the reusable workflow.
 
-Enable the `workflow_run` event and allow the listener to trigger fetch when it receives `action=completed`.
+The callback payload should match the application contract implemented by `WebhookIngestionMessage`. The listener should accept the signed custom event and trigger fetch on receipt.
 
-If you are using GitHub App webhook delivery, configure that in the app settings. If you are using organization-level or repository-level webhooks instead, point those webhooks at the same URL and secret.
+The webhook service is only the ingress and queue handoff layer:
+
+- it validates the custom event and signature
+- it publishes a compact Pub/Sub message
+- it does not call the GitHub API
+- it does not access Postgres
 
 ## 13. First end-to-end test
 

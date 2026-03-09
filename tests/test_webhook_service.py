@@ -22,25 +22,27 @@ def _signature(secret: str, body: bytes) -> str:
     return "sha256=" + hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
 
 
-def test_completed_workflow_run_is_published():
+def test_completed_custom_event_is_published():
     publisher = RecordingPublisher()
     settings = Settings(webhook_secret="secret")
     client = TestClient(create_app(settings=settings, publisher=publisher))
     payload = {
+        "event_type": "workflow_run_completed",
         "action": "completed",
-        "repository": {"id": 1, "full_name": "org/repo"},
-        "workflow_run": {"id": 99, "run_attempt": 2},
-        "installation": {"id": 777},
+        "delivery_id": "delivery-1",
+        "repository_id": 1,
+        "repository_full_name": "org/repo",
+        "run_id": 99,
+        "run_attempt": 2,
+        "installation_id": 777,
     }
     body = json.dumps(payload).encode("utf-8")
 
     response = client.post(
-        "/github/webhook",
+        "/workflow/callback",
         content=body,
         headers={
-            "X-GitHub-Event": "workflow_run",
-            "X-GitHub-Delivery": "delivery-1",
-            "X-Hub-Signature-256": _signature("secret", body),
+            "X-Observability-Signature-256": _signature("secret", body),
         },
     )
 
@@ -56,19 +58,21 @@ def test_non_completed_event_is_ignored():
     settings = Settings(webhook_secret="secret")
     client = TestClient(create_app(settings=settings, publisher=publisher))
     payload = {
+        "event_type": "workflow_run_completed",
         "action": "queued",
-        "repository": {"id": 1, "full_name": "org/repo"},
-        "workflow_run": {"id": 99, "run_attempt": 1},
+        "delivery_id": "delivery-1",
+        "repository_id": 1,
+        "repository_full_name": "org/repo",
+        "run_id": 99,
+        "run_attempt": 1,
     }
     body = json.dumps(payload).encode("utf-8")
 
     response = client.post(
-        "/github/webhook",
+        "/workflow/callback",
         content=body,
         headers={
-            "X-GitHub-Event": "workflow_run",
-            "X-GitHub-Delivery": "delivery-1",
-            "X-Hub-Signature-256": _signature("secret", body),
+            "X-Observability-Signature-256": _signature("secret", body),
         },
     )
 
@@ -76,24 +80,26 @@ def test_non_completed_event_is_ignored():
     assert response.json()["status"] == "ignored"
     assert publisher.messages == []
 
-def test_non_workflow_run_event_is_ignored():
+def test_unsupported_custom_event_is_ignored():
     publisher = RecordingPublisher()
     settings = Settings(webhook_secret="secret")
     client = TestClient(create_app(settings=settings, publisher=publisher))
     payload = {
+        "event_type": "not_supported",
         "action": "completed",
-        "repository": {"id": 1, "full_name": "org/repo"},
-        "workflow_run": {"id": 99, "run_attempt": 1},
+        "delivery_id": "delivery-1",
+        "repository_id": 1,
+        "repository_full_name": "org/repo",
+        "run_id": 99,
+        "run_attempt": 1,
     }
     body = json.dumps(payload).encode("utf-8")
 
     response = client.post(
-        "/github/webhook",
+        "/workflow/callback",
         content=body,
         headers={
-            "X-GitHub-Event": "push",
-            "X-GitHub-Delivery": "delivery-1",
-            "X-Hub-Signature-256": _signature("secret", body),
+            "X-Observability-Signature-256": _signature("secret", body),
         },
     )
 
@@ -112,35 +118,31 @@ def test_webhook_payload_limit_rejects_large_body():
     body = json.dumps({"action": "completed"}).encode("utf-8")
 
     response = client.post(
-        "/github/webhook",
+        "/workflow/callback",
         content=body,
         headers={
-            "X-GitHub-Event": "workflow_run",
-            "X-GitHub-Delivery": "delivery-1",
-            "X-Hub-Signature-256": _signature("secret", body),
+            "X-Observability-Signature-256": _signature("secret", body),
         },
     )
 
     assert response.status_code == 413
 
 
-def test_webhook_requires_expected_fields():
+def test_custom_event_requires_expected_fields():
     publisher = RecordingPublisher()
     settings = Settings(webhook_secret="secret")
     client = TestClient(create_app(settings=settings, publisher=publisher))
-    body = json.dumps({"action": "completed", "repository": {"id": 1}}).encode("utf-8")
+    body = json.dumps({"action": "completed", "delivery_id": "delivery-1"}).encode("utf-8")
 
     response = client.post(
-        "/github/webhook",
+        "/workflow/callback",
         content=body,
         headers={
-            "X-GitHub-Event": "workflow_run",
-            "X-GitHub-Delivery": "delivery-1",
-            "X-Hub-Signature-256": _signature("secret", body),
+            "X-Observability-Signature-256": _signature("secret", body),
         },
     )
 
-    assert response.status_code == 400
+    assert response.status_code == 422
 
 
 def test_topic_path_resolution_supports_short_and_fully_qualified_names():
