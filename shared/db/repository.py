@@ -4,12 +4,37 @@ from datetime import UTC, datetime
 
 from sqlalchemy.dialects.postgresql import insert
 
-from shared.db.models import JobRun, RawIngestionEvent, Repository, StepRun, WorkflowRun
+from shared.db.models import (
+    JobRun,
+    RawIngestionEvent,
+    Repository,
+    StepRun,
+    WebhookDelivery,
+    WorkflowRun,
+)
 from shared.db.session import SessionLocal
 from shared.schemas import IngestionBundle, WebhookIngestionMessage
 
 
 class IngestionRepository:
+    async def register_webhook_delivery(
+        self,
+        *,
+        delivery_id: str,
+        event_type: str,
+        repository_id: int,
+        run_id: int,
+    ) -> bool:
+        with SessionLocal.begin() as session:
+            stmt = insert(WebhookDelivery).values(
+                delivery_id=delivery_id,
+                event_type=event_type,
+                repository_id=repository_id,
+                run_id=run_id,
+            ).on_conflict_do_nothing()
+            result = session.execute(stmt)
+            return (result.rowcount or 0) > 0
+
     async def persist_webhook_event(self, message: WebhookIngestionMessage, payload: dict) -> None:
         with SessionLocal.begin() as session:
             self._upsert_raw_event(
@@ -70,7 +95,11 @@ class IngestionRepository:
             insert(WorkflowRun)
             .values(repository_id=repository_id, **values)
             .on_conflict_do_update(
-                index_elements=[WorkflowRun.repository_id, WorkflowRun.github_run_id, WorkflowRun.run_attempt],
+                index_elements=[
+                    WorkflowRun.repository_id,
+                    WorkflowRun.github_run_id,
+                    WorkflowRun.run_attempt,
+                ],
                 set_=values,
             )
             .returning(WorkflowRun.id)
@@ -111,7 +140,9 @@ class IngestionRepository:
         payload: dict,
         fetched_at: datetime,
     ) -> None:
-        payload_hash = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+        payload_hash = hashlib.sha256(
+            json.dumps(payload, sort_keys=True).encode("utf-8")
+        ).hexdigest()
         stmt = insert(RawIngestionEvent).values(
             source_type=source_type,
             repository_id=repository_id,

@@ -45,9 +45,13 @@ class GitHubClient:
         self.settings = settings
         self.auth = GitHubAppAuth(settings)
         self.http_client = http_client or httpx.AsyncClient(timeout=30.0)
+        self._token_cache: dict[int, str] = {}
 
     async def _headers(self, installation_id: int) -> dict[str, str]:
-        token = await self.auth.installation_token(self.http_client, installation_id)
+        token = self._token_cache.get(installation_id)
+        if token is None:
+            token = await self.auth.installation_token(self.http_client, installation_id)
+            self._token_cache[installation_id] = token
         return {
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github+json",

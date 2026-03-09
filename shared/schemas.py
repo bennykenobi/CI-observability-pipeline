@@ -26,9 +26,12 @@ class PubSubMessageEnvelope(BaseModel):
     message: dict[str, Any]
     subscription: str | None = None
 
-    def decode_data(self) -> dict[str, Any]:
+    def decode_data(self, *, max_bytes: int | None = None) -> dict[str, Any]:
         raw = self.message.get("data", "")
-        return json.loads(base64.b64decode(raw).decode("utf-8"))
+        decoded = base64.b64decode(raw)
+        if max_bytes is not None and len(decoded) > max_bytes:
+            raise ValueError("Pub/Sub message exceeds configured size limit")
+        return json.loads(decoded.decode("utf-8"))
 
 
 class RepositoryRecord(BaseModel):

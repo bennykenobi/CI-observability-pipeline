@@ -51,6 +51,8 @@ The MVP persistence contract has two outputs in the same Postgres database:
 
 Raw payload storage is intentional. The monitored workflows are still evolving, and the raw records provide replay and schema-flexibility without blocking downstream analytics on the normalized model.
 
+Schema changes are versioned with Alembic so database evolution has a single tracked migration path.
+
 ## Delivery semantics
 
 - Delivery is at-least-once.

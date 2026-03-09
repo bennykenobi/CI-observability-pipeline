@@ -11,8 +11,11 @@ from shared.schemas import WebhookIngestionMessage
 class RecordingIngestionService:
     def __init__(self):
         self.messages = []
+        self.raise_error = False
 
     async def ingest(self, message: WebhookIngestionMessage):
+        if self.raise_error:
+            raise RuntimeError("boom")
         self.messages.append(message)
 
 
@@ -31,8 +34,62 @@ def test_worker_decodes_pubsub_message_and_invokes_ingestion():
 
     response = client.post(
         "/pubsub/ingest",
-        json={"message": {"data": base64.b64encode(json.dumps(message).encode("utf-8")).decode("utf-8")}},
+        json={
+            "message": {
+                "data": base64.b64encode(json.dumps(message).encode("utf-8")).decode("utf-8")
+            }
+        },
     )
 
     assert response.status_code == 204
     assert ingestion_service.messages[0].run_id == 11
+
+
+def test_worker_rejects_oversized_pubsub_message():
+    ingestion_service = RecordingIngestionService()
+    client = TestClient(
+        create_app(
+            settings=Settings(max_pubsub_body_bytes=4),
+            ingestion_service=ingestion_service,
+        )
+    )
+
+    response = client.post(
+        "/pubsub/ingest",
+        json={
+            "message": {
+                "data": base64.b64encode(
+                    json.dumps({"run_id": 11}).encode("utf-8")
+                ).decode("utf-8")
+            }
+        },
+    )
+
+    assert response.status_code == 500
+    assert ingestion_service.messages == []
+
+
+def test_worker_returns_500_when_ingestion_fails():
+    ingestion_service = RecordingIngestionService()
+    ingestion_service.raise_error = True
+    client = TestClient(create_app(settings=Settings(), ingestion_service=ingestion_service))
+    message = WebhookIngestionMessage(
+        action="completed",
+        delivery_id="delivery-1",
+        repository_id=1,
+        repository_full_name="org/repo",
+        run_id=11,
+        run_attempt=1,
+        installation_id=99,
+    ).model_dump(mode="json")
+
+    response = client.post(
+        "/pubsub/ingest",
+        json={
+            "message": {
+                "data": base64.b64encode(json.dumps(message).encode("utf-8")).decode("utf-8")
+            }
+        },
+    )
+
+    assert response.status_code == 500

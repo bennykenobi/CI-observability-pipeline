@@ -11,7 +11,6 @@ from shared.ingestion import IngestionService
 from shared.logging import configure_logging
 from shared.schemas import PubSubMessageEnvelope, WebhookIngestionMessage
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -38,7 +37,17 @@ def create_app(
         x_cloud_trace_context: str | None = Header(default=None),
     ) -> None:
         try:
-            message = WebhookIngestionMessage.model_validate(envelope.decode_data())
+            encoded = envelope.message.get("data", "")
+            logger.info(
+                "pubsub_message_received",
+                extra={
+                    "encoded_body_size_bytes": len(encoded),
+                    "trace_context": x_cloud_trace_context,
+                },
+            )
+            message = WebhookIngestionMessage.model_validate(
+                envelope.decode_data(max_bytes=app_settings.max_pubsub_body_bytes)
+            )
             await app_ingestion_service.ingest(message)
             logger.info(
                 "workflow_run_ingested",
@@ -50,6 +59,7 @@ def create_app(
                     "delivery_id": message.delivery_id,
                     "trace_context": x_cloud_trace_context,
                     "correlation_id": message.correlation_id,
+                    "pubsub_topic": app_settings.pubsub_topic,
                 },
             )
         except Exception as exc:

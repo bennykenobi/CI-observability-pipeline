@@ -17,7 +17,6 @@ from shared.schemas import (
     WorkflowRunRecord,
 )
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -33,7 +32,9 @@ def _duration_ms(started_at: datetime | None, completed_at: datetime | None) -> 
     return int((completed_at - started_at).total_seconds() * 1000)
 
 
-def _parse_referenced_workflow(reference: dict[str, Any] | None) -> tuple[str | None, str | None, str | None]:
+def _parse_referenced_workflow(
+    reference: dict[str, Any] | None,
+) -> tuple[str | None, str | None, str | None]:
     if not reference:
         return None, None, None
     path = reference.get("path")
@@ -51,7 +52,9 @@ def build_ingestion_bundle(
     workflow_payload: dict[str, Any],
     jobs_pages: list[dict[str, Any]],
 ) -> IngestionBundle:
-    started_at = _parse_datetime(workflow_payload.get("run_started_at") or workflow_payload.get("created_at"))
+    started_at = _parse_datetime(
+        workflow_payload.get("run_started_at") or workflow_payload.get("created_at")
+    )
     completed_at = _parse_datetime(workflow_payload.get("updated_at"))
     referenced = (workflow_payload.get("referenced_workflows") or [None])[0]
     referenced_repo, referenced_path, referenced_ref = _parse_referenced_workflow(referenced)

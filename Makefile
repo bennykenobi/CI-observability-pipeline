@@ -1,12 +1,18 @@
 PYTHON ?= python
 
-.PHONY: install test run-webhook run-worker build-webhook build-worker
+.PHONY: install test run-webhook run-worker build-webhook build-worker db-upgrade db-revision
 
 install:
 	$(PYTHON) -m pip install -e .[dev]
 
 test:
 	$(PYTHON) -m pytest -q
+
+db-upgrade:
+	alembic upgrade head
+
+db-revision:
+	alembic revision --autogenerate -m "$(m)"
 
 run-webhook:
 	uvicorn services.webhook_service.app:app --reload
