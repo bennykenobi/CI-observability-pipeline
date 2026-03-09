@@ -78,7 +78,7 @@ def test_completed_workflow_run_is_published():
 def test_non_completed_event_is_ignored():
     publisher = RecordingPublisher()
     repository = RecordingRepository()
-    settings = Settings(webhook_secret="secret")
+    settings = Settings(webhook_secret="secret", repository_allowlist=["org/repo"])
     client = TestClient(create_app(settings=settings, publisher=publisher, repository=repository))
     payload = {
         "action": "requested",
@@ -106,7 +106,7 @@ def test_non_completed_event_is_ignored():
 def test_duplicate_delivery_is_ignored_before_publish():
     publisher = RecordingPublisher()
     repository = RecordingRepository()
-    settings = Settings(webhook_secret="secret")
+    settings = Settings(webhook_secret="secret", repository_allowlist=["org/repo"])
     client = TestClient(create_app(settings=settings, publisher=publisher, repository=repository))
     payload = {
         "action": "completed",
@@ -133,7 +133,11 @@ def test_duplicate_delivery_is_ignored_before_publish():
 def test_webhook_payload_limit_rejects_large_body():
     publisher = RecordingPublisher()
     repository = RecordingRepository()
-    settings = Settings(webhook_secret="secret", max_webhook_body_bytes=8)
+    settings = Settings(
+        webhook_secret="secret",
+        repository_allowlist=["org/repo"],
+        max_webhook_body_bytes=8,
+    )
     client = TestClient(create_app(settings=settings, publisher=publisher, repository=repository))
     body = json.dumps({"action": "completed"}).encode("utf-8")
 
